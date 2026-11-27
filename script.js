@@ -862,7 +862,7 @@
       var g = gis(); if (g) g.disableAutoSelect();
       renderAccount(); updateGate(); $("#acct-menu").hidden = true;
       ROLE = { admin: false, trusted: false }; $("#acct-admin").hidden = true; document.body.classList.remove("is-admin");
-      MY = {}; renderMyCrews();
+      MY = {}; adminWaiting = 0; renderMyCrews();
       // forget crew-only meets on this device
       var c = cacheGet(); if (c && c.events) { c.events = c.events.filter(function (x) { return x.visibility !== "crew"; }); cacheSet(c); }
       toast("Signed out");
@@ -940,7 +940,7 @@
     $("#acct-btn").onclick = function (e) {
       e.stopPropagation();
       var m = $("#acct-menu"); m.hidden = !m.hidden;
-      if (!m.hidden && auth && auth.email) loadMine();
+      if (!m.hidden && auth && auth.email) { loadMine(); loadMyCrews(); loadAdminCounts(); }
     };
     $("#acct-signout").onclick = signOut;
     document.addEventListener("click", function (e) { if (!e.target.closest("#account")) $("#acct-menu").hidden = true; });
@@ -956,6 +956,7 @@
       if (!r || !r.ok) return;
       ROLE = { admin: !!r.admin, trusted: !!r.trusted };
       $("#acct-admin").hidden = !ROLE.admin;
+      loadAdminCounts();
       if (ROLE.admin) document.body.classList.add("is-admin");
     }).catch(function () {});
   }
@@ -1027,7 +1028,7 @@
       if (!r.ok) throw new Error(r.error);
       adminItems = r.items || [];
       joinReqs = (rr[1] && rr[1].ok && rr[1].items) || [];
-      renderAdmin();
+      renderAdmin(); loadAdminCounts();
     }).catch(function (e) { list.innerHTML = "<li class='muted'>Couldn't load: " + esc(e.message || "") + "</li>"; });
   }
   function renderAdmin() {
@@ -1108,6 +1109,33 @@
 
   /* ---------------- crews: members, join requests, crew admins ---------------- */
   var MY = {};            // crew_id -> { role, status, requests, name, logo }
+  var crewBadge = 0, adminWaiting = 0;
+  function updateBadge() {
+    $("#acct-btn").classList.toggle("has-badge", authValid() && (crewBadge + adminWaiting) > 0);
+    var ab = $("#acct-admin"); if (ab) ab.textContent = "Admin panel" + (adminWaiting ? " · " + adminWaiting : "");
+  }
+  function loadAdminCounts() {
+    if (!ROLE.admin || !authValid()) { adminWaiting = 0; updateBadge(); return Promise.resolve(); }
+    return api({ action: "admin_counts" }).then(function (r) {
+      if (r && r.ok) { adminWaiting = r.pending + r.reported + r.requests; updateBadge(); }
+    }).catch(function () {});
+  }
+  // Keep lists fresh without reloading the page: re-check when you come back to the
+  // tab/app, and every 90 s while it's on screen. Only small counts/lists, never the whole map.
+  var lastRefresh = 0;
+  function refreshLive(force) {
+    if (!AUTH_ON || !authValid() || document.visibilityState === "hidden") return;
+    if (!force && Date.now() - lastRefresh < 20000) return;
+    lastRefresh = Date.now();
+    loadMyCrews();
+    loadAdminCounts();
+    if (!$("#crew-panel").hidden && panelCrew) loadCrewPanel();
+    if (ROLE.admin && !$("#admin-panel").hidden) loadAdmin();
+    if (!$("#acct-menu").hidden) loadMine();
+  }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") refreshLive(); });
+  window.addEventListener("focus", function () { refreshLive(); });
+  setInterval(function () { refreshLive(true); }, 90000);
   var MEMBERS_N = {};     // crew_id -> active member count
   if (BE) BE.memberCounts().then(function (n) { MEMBERS_N = n || {}; }).catch(function () {});
   function runsCrew(id) { var m = MY[id]; return !!(m && m.status === "active" && (m.role === "owner" || m.role === "admin")); }
@@ -1134,7 +1162,7 @@
         "<div class='mp-btns'>" + (runsCrew(id) || ROLE.admin ? "<button class='btn sm" + (runsCrew(id) && m.requests ? " btn-accent" : "") + "' data-manage='" + esc(id) + "'>Manage" +
           (runsCrew(id) && m.requests ? " · " + m.requests : "") + "</button>" : "") + "</div></li>";
     }).join("");
-    $("#acct-btn").classList.toggle("has-badge", badge > 0);
+    crewBadge = badge; updateBadge();
   }
   // Buttons under a crew in its map popup.
   function crewButtons(c) {
