@@ -199,6 +199,95 @@
     });
   }
 
+  /* ---------- crews: membership ---------- */
+  // Your crews (any status) + how many join requests wait in crews you run.
+  function myCrews() {
+    var me = uid();
+    return sb.from("crew_members").select("crew_id,role,status,crew:crew_id(name,logo_url,color,status)").eq("user_id", me).then(function (r) {
+      if (r.error) throw r.error;
+      var rows = r.data || [];
+      var run = rows.filter(function (x) { return x.status === "active" && (x.role === "owner" || x.role === "admin"); }).map(function (x) { return x.crew_id; });
+      var q = run.length
+        ? sb.from("crew_members").select("crew_id").eq("status", "pending").in("crew_id", run)
+        : Promise.resolve({ data: [] });
+      return Promise.resolve(q).then(function (p) {
+        if (p.error) throw p.error;
+        var waiting = {};
+        (p.data || []).forEach(function (x) { waiting[x.crew_id] = (waiting[x.crew_id] || 0) + 1; });
+        return { ok: true, items: rows.map(function (x) {
+          var c = x.crew || {};
+          return { crew_id: x.crew_id, role: x.role, status: x.status, name: c.name || x.crew_id, logo: c.logo_url || "", color: c.color || "",
+                   crew_status: c.status || "", requests: waiting[x.crew_id] || 0 };
+        }) };
+      });
+    });
+  }
+  function joinCrew(d) {
+    return sb.from("crew_members").insert({ crew_id: d.crew_id, user_id: uid() }).select("role,status").single().then(function (r) {
+      if (r.error) { if (r.error.code === "23505") return { ok: false, error: "You already asked to join this crew." }; throw r.error; }
+      return { ok: true, status: r.data.status, role: r.data.role };
+    });
+  }
+  function leaveCrew(d) {
+    return sb.from("crew_members").delete().eq("crew_id", d.crew_id).eq("user_id", uid()).select("crew_id").then(expectOne);
+  }
+  // Members + requests + this crew's meets (only crew admins / site admin see pending ones).
+  function crewPanel(d) {
+    return Promise.all([
+      sb.from("crew_members").select("user_id,role,status,created_at,profile:user_id(display_name,avatar_url)").eq("crew_id", d.crew_id).order("created_at"),
+      sb.from("meets").select("id,title,start_at,status,visibility,created_by,author:created_by(display_name)").eq("host_crew", d.crew_id).order("start_at", { ascending: false }).limit(30)
+    ]).then(function (res) {
+      res.forEach(function (r) { if (r.error) throw r.error; });
+      return { ok: true,
+        members: res[0].data.map(function (m) {
+          var pr = m.profile || {};
+          return { user_id: m.user_id, role: m.role, status: m.status, name: pr.display_name || "Member", avatar: pr.avatar_url || "", since: toLocal(m.created_at) };
+        }),
+        meets: res[1].data.map(function (m) {
+          return { id: m.id, title: m.title, start: toLocal(m.start_at), status: m.status, visibility: m.visibility,
+                   by: m.author && m.author.display_name ? m.author.display_name : "", mine: m.created_by === uid() };
+        }) };
+    });
+  }
+  // accept / decline / remove / promote / demote / make_owner (site admin)
+  function memberAction(d) {
+    var q = function () { return sb.from("crew_members"); };
+    var one = function (b) { return b.eq("crew_id", d.crew_id).eq("user_id", d.user_id).select("user_id").then(expectOne); };
+    if (d.act === "accept") return one(q().update({ status: "active" }));
+    if (d.act === "decline" || d.act === "remove") return one(q().delete());
+    if (d.act === "promote") return one(q().update({ role: "admin", status: "active" }));
+    if (d.act === "demote") return one(q().update({ role: "member" }));
+    if (d.act === "make_owner") {
+      // one owner per crew: the current owner (if any) becomes an admin
+      return q().update({ role: "admin" }).eq("crew_id", d.crew_id).eq("role", "owner").neq("user_id", d.user_id).then(function (r) {
+        if (r.error) throw r.error;
+        return one(q().update({ role: "owner", status: "active" }));
+      });
+    }
+    return Promise.resolve({ ok: false, error: "Unknown action." });
+  }
+  // Site admin: every pending join request (mostly for crews without a leader yet).
+  function joinRequests() {
+    return sb.from("crew_members").select("crew_id,user_id,created_at,profile:user_id(display_name,avatar_url),crew:crew_id(name)")
+      .eq("status", "pending").order("created_at").then(function (r) {
+        if (r.error) throw r.error;
+        return { ok: true, items: r.data.map(function (x) {
+          return { crew_id: x.crew_id, crew: (x.crew || {}).name || x.crew_id, user_id: x.user_id,
+                   name: (x.profile || {}).display_name || "Someone", avatar: (x.profile || {}).avatar_url || "", at: toLocal(x.created_at).replace("T", " ") };
+        }) };
+      });
+  }
+  // Public: how many active members each crew has (for popups).
+  function memberCounts() {
+    return ready.then(function () {
+      return sb.from("crew_members").select("crew_id").eq("status", "active");
+    }).then(function (r) {
+      if (r.error) throw r.error;
+      var n = {}; r.data.forEach(function (x) { n[x.crew_id] = (n[x.crew_id] || 0) + 1; });
+      return n;
+    });
+  }
+
   function whoami() {
     return sb.from("profiles").select("is_admin,is_trusted,is_banned").eq("id", uid()).maybeSingle().then(function (r) {
       if (r.error) throw r.error;
@@ -267,6 +356,12 @@
       if (d.action === "update") return update(d);
       if (d.action === "delete") return remove(d);
       if (d.action === "report") return report(d);
+      if (d.action === "my_crews") return myCrews();
+      if (d.action === "join_crew") return joinCrew(d);
+      if (d.action === "leave_crew") return leaveCrew(d);
+      if (d.action === "crew_panel") return crewPanel(d);
+      if (d.action === "member") return memberAction(d);
+      if (d.action === "join_requests") return joinRequests();
       if (d.action === "admin_list") return adminList();
       if (String(d.action || "").indexOf("admin_") === 0) return adminAction(d);
       return { ok: false, error: "Unknown action." };
@@ -295,6 +390,7 @@
   window.SA_BACKEND = {
     ready: ready,
     load: load,
+    memberCounts: memberCounts,
     call: call,
     user: user,
     isSignedIn: function () { return !!(session && session.user); },
