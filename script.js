@@ -269,7 +269,7 @@
         (c.logo ? "<img src='" + esc(c.logo) + "' alt=''>" : "") +
         "<div>" + (link ? "<a href='" + esc(link) + "' target='_blank' rel='noopener'>" + esc(c.name) + " ↗</a>" : "<b>" + esc(c.name) + "</b>") +
         (c.tags && c.tags.length ? "<br>" + c.tags.map(function (x) { return "<span class='tag tag-type'>" + esc(x) + "</span>"; }).join("") : "") +
-        "</div></div>" + adminButtons("crew", c);
+        "</div></div>" + crewButtons(c) + adminButtons("crew", c);
     });
     var ids = t.crews.map(function (c) { return c.id; });
     var ups = EVENTS.filter(function (e) { return ids.indexOf(e.host) > -1; }).slice(0, 3);
@@ -416,7 +416,7 @@
     html += "<a class='btn sm' target='_blank' rel='noopener' href='https://www.google.com/maps/dir/?api=1&destination=" + dest + "'>Maps</a>";
     html += "<button class='btn sm' data-share='meet=" + esc(e.id) + "'>Share</button>";
     if (link) html += "<a class='btn sm' target='_blank' rel='noopener' href='" + esc(link) + "'>Event page ↗</a>";
-    html += "</div>" + adminButtons("meet", e) + reportLink("meet", e) + "<div>";
+    html += "</div>" + adminButtons("meet", e) + crewAdminRow(e) + reportLink("meet", e) + "<div>";
     return html + "</div></div>";
   }
 
@@ -850,7 +850,7 @@
     if (!resp || !resp.credential) { toast("Sign-in failed", "Please try again."); return; }
     BE.signInWithGoogle(resp.credential).then(function (u) {
       auth = u;
-      renderAccount(); updateGate(); loadRole();
+      renderAccount(); updateGate(); loadRole(); loadMyCrews();
       toast("Signed in", "Welcome, " + ((auth && auth.name) || "").split(" ")[0] + "!");
       // crew-only meets you belong to appear after a refresh of the data
       BE.load().then(function (d) { cacheSet(d); }).catch(function () {});
@@ -862,7 +862,11 @@
       var g = gis(); if (g) g.disableAutoSelect();
       renderAccount(); updateGate(); $("#acct-menu").hidden = true;
       ROLE = { admin: false, trusted: false }; $("#acct-admin").hidden = true; document.body.classList.remove("is-admin");
+      MY = {}; renderMyCrews();
+      // forget crew-only meets on this device
+      var c = cacheGet(); if (c && c.events) { c.events = c.events.filter(function (x) { return x.visibility !== "crew"; }); cacheSet(c); }
       toast("Signed out");
+      if (EVENTS.some(function (x) { return x.visibility === "crew"; })) setTimeout(function () { location.reload(); }, 800);
     });
   }
   function renderGisButton(el, wide) {
@@ -928,7 +932,11 @@
         renderAccount(); updateGate();
       });
     });
-    BE.onAuthChange(function () { auth = BE.user(); renderAccount(); updateGate(); });
+    BE.onAuthChange(function () {
+      var was = auth && auth.id;
+      auth = BE.user(); renderAccount(); updateGate();
+      if ((auth && auth.id) !== was) { loadRole(); loadMyCrews(); }   // signed in / out / switched account
+    });
     $("#acct-btn").onclick = function (e) {
       e.stopPropagation();
       var m = $("#acct-menu"); m.hidden = !m.hidden;
@@ -982,6 +990,12 @@
     });
   });
 
+  function crewAdminRow(e) {
+    if (ROLE.admin || e._src !== "sheet" || !e.host || !runsCrew(e.host)) return "";
+    return "<div class='admin-row'><span>Crew admin</span>" +
+      "<button class='btn sm btn-accent' data-edit='" + esc(e.id) + "' data-kind='meet'>Edit</button>" +
+      "<button class='btn sm' data-manage='" + esc(e.host) + "'>Manage crew meets</button></div>";
+  }
   function adminButtons(k, item) {
     if (!ROLE.admin) return "";
     if (item._src !== "sheet") return "<div class='admin-row muted'>Admin: this " + k + " is in the site's data files — edit it on GitHub.</div>";
@@ -1004,22 +1018,35 @@
       else setTimeout(function () { location.reload(); }, 1200);
     }).catch(function (e) { btn.disabled = false; toast("Couldn't do that", e.message); });
   }
+  var joinReqs = [];
   function loadAdmin() {
     var list = $("#admin-list");
     if (!adminItems.length) list.innerHTML = "<li class='muted'>Loading…</li>";
-    api({ action: "admin_list" }).then(function (r) {
+    Promise.all([api({ action: "admin_list" }), api({ action: "join_requests" })]).then(function (rr) {
+      var r = rr[0];
       if (!r.ok) throw new Error(r.error);
       adminItems = r.items || [];
+      joinReqs = (rr[1] && rr[1].ok && rr[1].items) || [];
       renderAdmin();
     }).catch(function (e) { list.innerHTML = "<li class='muted'>Couldn't load: " + esc(e.message || "") + "</li>"; });
   }
   function renderAdmin() {
     var counts = { pending: 0, flagged: 0, live: 0, archived: 0 };
     adminItems.forEach(function (i) { counts[i.status]++; });
+    counts.requests = joinReqs.length;
     $$("#admin-tabs .chip").forEach(function (c) {
       c.classList.toggle("active", c.dataset.t === adminTab);
       c.querySelector("b").textContent = counts[c.dataset.t] || 0;
     });
+    $("#admin-kinds").hidden = adminTab === "requests";
+    if (adminTab === "requests") {
+      $("#admin-list").innerHTML = joinReqs.length ? joinReqs.map(function (q) {
+        return "<li class='admin-item'><div class='ai-main'><span class='tag tag-type'>Join</span><b>" + esc(q.name) + "</b> → " + esc(q.crew) +
+          "<div class='muted small'>asked " + esc(q.at) + "</div></div><div class='ai-btns'>" +
+          "<button class='btn sm' data-manage='" + esc(q.crew_id) + "'>Open crew</button></div></li>";
+      }).join("") : "<li class='muted'>No join requests.</li>";
+      return;
+    }
     // second row: what kind of post (counts are for the selected status)
     var inTab = adminItems.filter(function (i) { return i.status === adminTab; });
     var kc = { all: inTab.length, meet: 0, crew: 0, place: 0, edited: 0 };
@@ -1076,7 +1103,211 @@
       var b = e.target.closest("[data-admin-act]"); if (!b) return;
       e.preventDefault(); e.stopPropagation(); adminDo(b);
     });
-    whenGis(loadRole);
+    BE.ready.then(loadRole);
+  }
+
+  /* ---------------- crews: members, join requests, crew admins ---------------- */
+  var MY = {};            // crew_id -> { role, status, requests, name, logo }
+  var MEMBERS_N = {};     // crew_id -> active member count
+  if (BE) BE.memberCounts().then(function (n) { MEMBERS_N = n || {}; }).catch(function () {});
+  function runsCrew(id) { var m = MY[id]; return !!(m && m.status === "active" && (m.role === "owner" || m.role === "admin")); }
+  function memberOf(id) { var m = MY[id]; return !!(m && m.status === "active"); }
+  function loadMyCrews() {
+    if (!AUTH_ON || !authValid()) { MY = {}; renderMyCrews(); return Promise.resolve(); }
+    return api({ action: "my_crews" }).then(function (r) {
+      if (!r.ok) return;
+      MY = {}; (r.items || []).forEach(function (x) { MY[x.crew_id] = x; });
+      renderMyCrews(); updateVisibilityField();
+    }).catch(function () {});
+  }
+  var ROLE_LABEL = { owner: "Owner", admin: "Crew admin", member: "Member" };
+  function renderMyCrews() {
+    var box = $("#acct-crews"), list = $("#acct-crew-list"); if (!box) return;
+    var ids = Object.keys(MY);
+    box.hidden = !ids.length;
+    var badge = 0;
+    list.innerHTML = ids.map(function (id) {
+      var m = MY[id], c = crewById[id];
+      badge += runsCrew(id) ? m.requests : 0;
+      var tag = m.status === "pending" ? "<span class='tag tag-sample'>Requested</span>" : "<span class='tag tag-type'>" + esc(ROLE_LABEL[m.role] || m.role) + "</span>";
+      return "<li class='my-post'><div class='mp-main'" + (c ? " data-goto-crew='" + esc(id) + "'" : "") + ">" + tag + esc(m.name) + "</div>" +
+        "<div class='mp-btns'>" + (runsCrew(id) || ROLE.admin ? "<button class='btn sm" + (runsCrew(id) && m.requests ? " btn-accent" : "") + "' data-manage='" + esc(id) + "'>Manage" +
+          (runsCrew(id) && m.requests ? " · " + m.requests : "") + "</button>" : "") + "</div></li>";
+    }).join("");
+    $("#acct-btn").classList.toggle("has-badge", badge > 0);
+  }
+  // Buttons under a crew in its map popup.
+  function crewButtons(c) {
+    if (c._src !== "sheet" || !AUTH_ON) return "";
+    var n = MEMBERS_N[c.id] || 0, m = MY[c.id], id = esc(c.id), b = "";
+    if (!authValid() || !m) b = "<button class='btn sm btn-accent' data-join='" + id + "'>Request to join</button>";
+    else if (m.status === "pending") b = "<span class='muted small'>Request sent</span><button class='btn sm' data-leave='" + id + "' data-what='cancel'>Cancel</button>";
+    else if (runsCrew(c.id)) b = "<button class='btn sm btn-accent' data-manage='" + id + "'>Manage crew" + (m.requests ? " · " + m.requests + " new" : "") + "</button>";
+    else b = "<span class='tag tag-live'>✓ " + esc(ROLE_LABEL[m.role] || "Member") + "</span><button class='btn sm' data-leave='" + id + "' data-what='leave'>Leave</button>";
+    if (ROLE.admin && !runsCrew(c.id)) b += "<button class='btn sm' data-manage='" + id + "'>Manage</button>";
+    return "<div class='crew-btns'><span class='muted small'>👥 " + n + " member" + (n === 1 ? "" : "s") + "</span>" + b + "</div>";
+  }
+  document.addEventListener("click", function (e) {
+    var j = e.target.closest("[data-join]"), l = e.target.closest("[data-leave]"), mg = e.target.closest("[data-manage]");
+    if (!j && !l && !mg) return;
+    e.preventDefault(); e.stopPropagation();
+    if (!authValid()) { toast("Sign in first", "Tap the account button at the top right, then ask to join."); return; }
+    if (mg) { openCrewPanel(mg.dataset.manage); return; }
+    if (j) {
+      j.disabled = true;
+      api({ action: "join_crew", crew_id: j.dataset.join }).then(function (r) {
+        if (!r.ok) throw new Error(r.error);
+        toast(r.status === "active" ? "You're in ✅" : "Request sent ✅", r.status === "active" ? "" : "The crew's admins (or the site admin) will accept it.", 5000);
+        return loadMyCrews();
+      }).then(function () { map.closePopup(); }).catch(function (err) { j.disabled = false; toast("Couldn't send", err.message); });
+      return;
+    }
+    if (!l.classList.contains("confirm")) {
+      l.classList.add("confirm"); l.dataset.txt = l.textContent; l.textContent = l.dataset.what === "cancel" ? "Tap again to cancel" : "Tap again to leave";
+      setTimeout(function () { if (l.isConnected) { l.classList.remove("confirm"); l.textContent = l.dataset.txt; } }, 4000);
+      return;
+    }
+    l.disabled = true;
+    api({ action: "leave_crew", crew_id: l.dataset.leave }).then(function (r) {
+      if (!r.ok) throw new Error(r.error);
+      toast(l.dataset.what === "cancel" ? "Request cancelled" : "You left the crew");
+      var hadCrewOnly = EVENTS.some(function (x) { return x.host === l.dataset.leave && x.visibility === "crew"; });
+      return loadMyCrews().then(function () { map.closePopup(); if (hadCrewOnly) setTimeout(function () { location.reload(); }, 800); });
+    }).catch(function (err) { l.disabled = false; toast("Couldn't do that", err.message); });
+  });
+
+  // ---- Manage crew panel ----
+  var panelCrew = null, crewDirty = false;
+  function openCrewPanel(id) {
+    panelCrew = id; crewDirty = false;
+    $("#acct-menu").hidden = true; map.closePopup();
+    if (!$("#admin-panel").hidden) $("#admin-panel").hidden = true;  // keep adminDirty
+    var c = crewById[id];
+    $("#crew-panel-title").textContent = c ? c.name : (MY[id] && MY[id].name) || "Crew";
+    $("#crew-panel").hidden = false;
+    loadCrewPanel();
+  }
+  function closeCrewPanel() {
+    $("#crew-panel").hidden = true; panelCrew = null;
+    if (crewDirty) { toast("Refreshing the map…"); setTimeout(function () { location.reload(); }, 600); }
+  }
+  function loadCrewPanel() {
+    var id = panelCrew; if (!id) return;
+    $("#crew-panel-body").innerHTML = "<p class='muted'>Loading…</p>";
+    api({ action: "crew_panel", crew_id: id }).then(function (r) {
+      if (!r.ok) throw new Error(r.error);
+      if (panelCrew === id) renderCrewPanel(id, r);
+    }).catch(function (e) { $("#crew-panel-body").innerHTML = "<p class='muted'>Couldn't load: " + esc(e.message || "") + "</p>"; });
+  }
+  function renderCrewPanel(id, r) {
+    var mine = MY[id] || {}, iOwn = mine.status === "active" && mine.role === "owner";
+    var site = ROLE.admin, canMembers = runsCrew(id) || site;
+    var hasOwner = r.members.some(function (m) { return m.role === "owner" && m.status === "active"; });
+    var me = auth && auth.id;
+    var av = function (m) { return m.avatar ? "<img src='" + esc(m.avatar) + "' alt='' referrerpolicy='no-referrer'>" : "<b>" + esc(initials(m.name || "?")) + "</b>"; };
+    var btn = function (act, uidv, label, cls) {
+      return "<button class='btn sm " + (cls || "") + "' data-mact='" + act + "' data-uid='" + esc(uidv) + "'>" + label + "</button>";
+    };
+    var pending = r.members.filter(function (m) { return m.status === "pending"; });
+    var active = r.members.filter(function (m) { return m.status === "active"; });
+    var rank = { owner: 0, admin: 1, member: 2 };
+    active.sort(function (a, b) { return rank[a.role] - rank[b.role]; });
+    var h = "";
+    if (!hasOwner) h += "<p class='crew-note'>This crew has no leader yet. When its leader asks to join, tap <b>Accept as owner</b>.</p>";
+    h += "<div class='crew-actions'>" +
+      (canMembers ? "<button class='btn sm btn-accent' data-crew-newmeet='" + esc(id) + "'>+ Crew meet</button>" : "") +
+      (canMembers ? "<button class='btn sm' data-edit='" + esc(id) + "' data-kind='crew'>Edit crew details</button>" : "") + "</div>";
+    if (canMembers) {
+      h += "<h5>Join requests <b>" + pending.length + "</b></h5>";
+      h += pending.length ? "<ul class='member-list'>" + pending.map(function (m) {
+        return "<li><span class='mav'>" + av(m) + "</span><span class='mname'>" + esc(m.name) + "<small>asked " + esc(m.since.slice(0, 10)) + "</small></span><span class='mbtns'>" +
+          (site && !hasOwner ? btn("make_owner", m.user_id, "Accept as owner", "btn-accent") + btn("accept", m.user_id, "Accept as member", "") : btn("accept", m.user_id, "Accept", "btn-accent")) +
+          btn("decline", m.user_id, "Decline", "btn-danger") + "</span></li>";
+      }).join("") + "</ul>" : "<p class='muted small'>No one waiting.</p>";
+    }
+    h += "<h5>Members <b>" + active.length + "</b></h5><ul class='member-list'>" + active.map(function (m) {
+      var b = "";
+      if (canMembers && m.user_id !== me && m.role !== "owner") {
+        if (m.role === "member") b += btn("promote", m.user_id, "Make admin", "");
+        if (m.role === "admin" && (iOwn || site)) b += btn("demote", m.user_id, "Make member", "");
+        if (m.role === "member" || iOwn || site) b += btn("remove", m.user_id, "Remove", "btn-danger");
+      }
+      if (site && m.role !== "owner") b += btn("make_owner", m.user_id, "Make owner", "");
+      return "<li><span class='mav'>" + av(m) + "</span><span class='mname'>" + esc(m.name) + (m.user_id === me ? " <small>(you)</small>" : "") + "</span>" +
+        "<span class='tag " + (m.role === "member" ? "tag-sample" : "tag-type") + "'>" + esc(ROLE_LABEL[m.role]) + "</span><span class='mbtns'>" + b + "</span></li>";
+    }).join("") + (active.length ? "" : "<li class='muted small'>No members yet.</li>") + "</ul>";
+    if (canMembers) {
+      h += "<h5>Crew meets</h5>";
+      h += r.meets.length ? "<ul class='member-list'>" + r.meets.map(function (m) {
+        var d = parseDate(m.start), st = { pending: "Pending", live: "Live", archived: "Archived", flagged: "Reported" }[m.status] || m.status;
+        var b = "";
+        if (m.status === "pending") b += "<button class='btn sm btn-accent' data-cmeet='admin_approve' data-id='" + esc(m.id) + "'>Approve</button>";
+        if (m.status !== "flagged") b += "<button class='btn sm' data-edit='" + esc(m.id) + "' data-kind='meet'>Edit</button>";
+        if (m.status === "live" || m.status === "pending") b += "<button class='btn sm' data-cmeet='admin_archive' data-id='" + esc(m.id) + "'>Archive</button>";
+        b += "<button class='btn sm btn-danger' data-cmeet='admin_delete' data-id='" + esc(m.id) + "'>Delete</button>";
+        return "<li><span class='mname'>" + esc(m.title) + "<small>" + esc(d ? fmtFull.format(d) : "") + (m.by ? " · by " + esc(m.by) : "") + "</small></span>" +
+          "<span class='tag " + (m.status === "live" ? "tag-live" : "tag-sample") + "'>" + st + "</span>" +
+          (m.visibility === "crew" ? "<span class='tag tag-type'>Crew only</span>" : "") + "<span class='mbtns'>" + b + "</span></li>";
+      }).join("") + "</ul>" : "<p class='muted small'>No meets yet.</p>";
+    }
+    if (!canMembers) h += "<p class='muted small'>Only the crew's owner and admins can manage it.</p>";
+    $("#crew-panel-body").innerHTML = h;
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-mact]"), cm = e.target.closest("[data-cmeet]"), nm = e.target.closest("[data-crew-newmeet]");
+    if (!b && !cm && !nm) return;
+    e.preventDefault(); e.stopPropagation();
+    if (nm) {
+      var cid = nm.dataset.crewNewmeet;
+      $("#crew-panel").hidden = true; crewDirty = false; panelCrew = null;
+      openModal(); showKind("meet");
+      form.elements.host.value = cid;
+      form.elements.visibility.value = memberOf(cid) ? "crew" : "public";
+      updateVisibilityField();
+      return;
+    }
+    var el = b || cm, danger = /remove|decline|admin_delete/.test(b ? b.dataset.mact : cm.dataset.cmeet);
+    if (danger && !el.classList.contains("confirm")) {
+      el.classList.add("confirm"); el.dataset.txt = el.textContent; el.textContent = "Tap again";
+      setTimeout(function () { if (el.isConnected) { el.classList.remove("confirm"); el.textContent = el.dataset.txt; } }, 4000);
+      return;
+    }
+    el.disabled = true;
+    var req = b ? { action: "member", act: b.dataset.mact, crew_id: panelCrew, user_id: b.dataset.uid }
+                : { action: cm.dataset.cmeet, kind: "meet", id: cm.dataset.id };
+    api(req).then(function (r) {
+      if (!r.ok) throw new Error(r.error || "Not allowed");
+      crewDirty = crewDirty || !!cm || (b && b.dataset.uid === (auth && auth.id));
+      var done = { accept: "Accepted", decline: "Declined", remove: "Removed", promote: "Now a crew admin", demote: "Now a member",
+                   make_owner: "Now the owner", admin_approve: "Approved", admin_archive: "Archived", admin_delete: "Deleted" }[b ? b.dataset.mact : cm.dataset.cmeet];
+      toast(done || "Done");
+      loadMyCrews(); loadCrewPanel();
+      if (ROLE.admin && !$("#admin-panel").hidden) loadAdmin();
+    }).catch(function (err) { el.disabled = false; el.classList.remove("confirm"); if (el.dataset.txt) el.textContent = el.dataset.txt; toast("Couldn't do that", err.message); });
+  });
+  if (AUTH_ON) {
+    $$("[data-crew-close]").forEach(function (b) { b.onclick = closeCrewPanel; });
+    $("#crew-panel").addEventListener("click", function (e) { if (e.target.id === "crew-panel") closeCrewPanel(); });
+    BE.ready.then(loadMyCrews);   // after the saved sign-in is restored (not just when Google's script loads)
+  }
+
+  // "Who can see it" on the meet form. Crew-only needs a host crew you're a member of:
+  // picking "Crew members only" fills in your crew as host (your first one if you have several).
+  function myMemberCrews() { return Object.keys(MY).filter(memberOf); }
+  function updateVisibilityField(changed) {
+    var sel = form && form.elements.visibility; if (!sel) return;
+    var hostSel = form.elements.host, opt = sel.querySelector("option[value=crew]");
+    var mine = myMemberCrews();
+    opt.disabled = !mine.length;
+    opt.textContent = mine.length ? "Crew members only" : "Crew members only (join a crew first)";
+    if (sel.value === "crew" && !memberOf(hostSel.value)) {
+      if (changed === "visibility" && mine.length) hostSel.value = mine[0];   // chose crew-only: host = your crew
+      else sel.value = "public";                                              // changed host to a crew you're not in
+    }
+    var host = hostSel.value, hostName = (crewById[host] || MY[host] || {}).name || "this crew";
+    $("#vis-hint").textContent = sel.value === "crew"
+      ? "Only members of " + hostName + " will see it." + (mine.length > 1 ? " Change the host crew above to pick another of your crews." : "")
+      : (!mine.length ? "Join a crew to post meets only its members can see." : "");
   }
 
   /* ---------------- submit modal ---------------- */
@@ -1084,7 +1315,11 @@
   $("#host-select").innerHTML = "<option value=''>— Open / independent —</option>" +
     CREWS.map(function (c) { return "<option value='" + esc(c.id) + "'>" + esc(c.name) + "</option>"; }).join("");
 
-  function openModal() { if (editing) { editing = null; form.reset(); renderTagChips(); picked = null; $("#pick-coords").textContent = "No location yet"; } setFormMode(false); modal.hidden = false; updateGate(); resetDates(); }
+  form.elements.host.addEventListener("change", function () { updateVisibilityField("host"); });
+  form.elements.visibility.addEventListener("change", function () { updateVisibilityField("visibility"); });
+  function openModal() { if (editing) { editing = null; form.reset(); renderTagChips(); picked = null; $("#pick-coords").textContent = "No location yet"; } setFormMode(false); updateVisibilityField();
+    if (authValid()) loadMyCrews();   // pick up crews you joined since the page loaded
+    modal.hidden = false; updateGate(); resetDates(); }
   function closeModal() {
     if (editing && adminDirty) { setTimeout(function () { location.reload(); }, 300); }
     modal.hidden = true; modal.classList.remove("picking"); $("#pick-hint").hidden = true; map.off("click", onPick);
@@ -1118,6 +1353,7 @@
     if (!authValid()) { toast("Please sign in again"); return; }
     $("#acct-menu").hidden = true;
     if (!$("#admin-panel").hidden) $("#admin-panel").hidden = true; // keep adminDirty so the map refreshes after
+    $("#crew-panel").hidden = true;
     map.closePopup();
     toast("Opening…", "", 1200);
     api({ action: "get", kind: k, id: id }).then(function (r) {
@@ -1140,6 +1376,7 @@
       set("start_date", (m.start || "").slice(0, 10)); set("start_time", (m.start || "").slice(11, 16));
       set("end_date", (m.end || "").slice(0, 10)); set("end_time", (m.end || "").slice(11, 16));
       set("place", m.place); set("details", m.details); set("link", m.link);
+      set("visibility", m.visibility || "public"); updateVisibilityField();
       $$("#submit-form input[type=date]").forEach(function (d) { d.min = ""; }); // past/ongoing meets are editable
     } else if (m.kind === "crew") {
       set("name", m.name); set("area", m.area); set("color", m.color || "#ff3b3b"); set("radius", m.radius || 3);
@@ -1376,7 +1613,7 @@
 
     function payloadFor(k) {
       var pl = k === "meet"
-        ? { kind: "meet", title: f.title, type: f.type, host: f.host, start: f.start, end: f.end, place: f.place, details: f.details, link: f.link }
+        ? { kind: "meet", title: f.title, type: f.type, host: f.host, visibility: f.visibility || "public", start: f.start, end: f.end, place: f.place, details: f.details, link: f.link }
         : k === "place"
         ? { kind: "place", name: f.pname, category: f.pcategory, area: f.parea, tags: new FormData(form).getAll("ptag").join(", "),
             hours: f.hours, phone: f.phone, link: f.plink, details: f.pdetails }
