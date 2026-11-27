@@ -862,7 +862,7 @@
       var g = gis(); if (g) g.disableAutoSelect();
       renderAccount(); updateGate(); $("#acct-menu").hidden = true;
       ROLE = { admin: false, trusted: false }; $("#acct-admin").hidden = true; document.body.classList.remove("is-admin");
-      MY = {}; renderMyCrews();
+      MY = {}; adminWaiting = 0; renderMyCrews();
       // forget crew-only meets on this device
       var c = cacheGet(); if (c && c.events) { c.events = c.events.filter(function (x) { return x.visibility !== "crew"; }); cacheSet(c); }
       toast("Signed out");
@@ -940,7 +940,7 @@
     $("#acct-btn").onclick = function (e) {
       e.stopPropagation();
       var m = $("#acct-menu"); m.hidden = !m.hidden;
-      if (!m.hidden && auth && auth.email) loadMine();
+      if (!m.hidden && auth && auth.email) { loadMine(); loadMyCrews(); loadAdminCounts(); }
     };
     $("#acct-signout").onclick = signOut;
     document.addEventListener("click", function (e) { if (!e.target.closest("#account")) $("#acct-menu").hidden = true; });
@@ -956,6 +956,7 @@
       if (!r || !r.ok) return;
       ROLE = { admin: !!r.admin, trusted: !!r.trusted };
       $("#acct-admin").hidden = !ROLE.admin;
+      loadAdminCounts();
       if (ROLE.admin) document.body.classList.add("is-admin");
     }).catch(function () {});
   }
@@ -1027,7 +1028,7 @@
       if (!r.ok) throw new Error(r.error);
       adminItems = r.items || [];
       joinReqs = (rr[1] && rr[1].ok && rr[1].items) || [];
-      renderAdmin();
+      renderAdmin(); loadAdminCounts();
     }).catch(function (e) { list.innerHTML = "<li class='muted'>Couldn't load: " + esc(e.message || "") + "</li>"; });
   }
   function renderAdmin() {
@@ -1108,6 +1109,33 @@
 
   /* ---------------- crews: members, join requests, crew admins ---------------- */
   var MY = {};            // crew_id -> { role, status, requests, name, logo }
+  var crewBadge = 0, adminWaiting = 0;
+  function updateBadge() {
+    $("#acct-btn").classList.toggle("has-badge", authValid() && (crewBadge + adminWaiting) > 0);
+    var ab = $("#acct-admin"); if (ab) ab.textContent = "Admin panel" + (adminWaiting ? " · " + adminWaiting : "");
+  }
+  function loadAdminCounts() {
+    if (!ROLE.admin || !authValid()) { adminWaiting = 0; updateBadge(); return Promise.resolve(); }
+    return api({ action: "admin_counts" }).then(function (r) {
+      if (r && r.ok) { adminWaiting = r.pending + r.reported + r.requests; updateBadge(); }
+    }).catch(function () {});
+  }
+  // Keep lists fresh without reloading the page: re-check when you come back to the
+  // tab/app, and every 90 s while it's on screen. Only small counts/lists, never the whole map.
+  var lastRefresh = 0;
+  function refreshLive(force) {
+    if (!AUTH_ON || !authValid() || document.visibilityState === "hidden") return;
+    if (!force && Date.now() - lastRefresh < 20000) return;
+    lastRefresh = Date.now();
+    loadMyCrews();
+    loadAdminCounts();
+    if (!$("#crew-panel").hidden && panelCrew) loadCrewPanel();
+    if (ROLE.admin && !$("#admin-panel").hidden) loadAdmin();
+    if (!$("#acct-menu").hidden) loadMine();
+  }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") refreshLive(); });
+  window.addEventListener("focus", function () { refreshLive(); });
+  setInterval(function () { refreshLive(true); }, 90000);
   var MEMBERS_N = {};     // crew_id -> active member count
   if (BE) BE.memberCounts().then(function (n) { MEMBERS_N = n || {}; }).catch(function () {});
   function runsCrew(id) { var m = MY[id]; return !!(m && m.status === "active" && (m.role === "owner" || m.role === "admin")); }
@@ -1134,7 +1162,7 @@
         "<div class='mp-btns'>" + (runsCrew(id) || ROLE.admin ? "<button class='btn sm" + (runsCrew(id) && m.requests ? " btn-accent" : "") + "' data-manage='" + esc(id) + "'>Manage" +
           (runsCrew(id) && m.requests ? " · " + m.requests : "") + "</button>" : "") + "</div></li>";
     }).join("");
-    $("#acct-btn").classList.toggle("has-badge", badge > 0);
+    crewBadge = badge; updateBadge();
   }
   // Buttons under a crew in its map popup.
   function crewButtons(c) {
@@ -1261,8 +1289,8 @@
       var cid = nm.dataset.crewNewmeet;
       $("#crew-panel").hidden = true; crewDirty = false; panelCrew = null;
       openModal(); showKind("meet");
-      form.elements.host.value = cid; updateVisibilityField();
-      if (memberOf(cid)) form.elements.visibility.value = "crew";
+      form.elements.host.value = cid;
+      form.elements.visibility.value = memberOf(cid) ? "crew" : "public";
       updateVisibilityField();
       return;
     }
@@ -1291,14 +1319,23 @@
     BE.ready.then(loadMyCrews);   // after the saved sign-in is restored (not just when Google's script loads)
   }
 
-  // "Who can see it" on the meet form: crew-only needs a host crew you're a member of.
-  function updateVisibilityField() {
+  // "Who can see it" on the meet form. Crew-only needs a host crew you're a member of:
+  // picking "Crew members only" fills in your crew as host (your first one if you have several).
+  function myMemberCrews() { return Object.keys(MY).filter(memberOf); }
+  function updateVisibilityField(changed) {
     var sel = form && form.elements.visibility; if (!sel) return;
-    var host = form.elements.host.value, ok = !!host && memberOf(host);
-    sel.querySelector("option[value=crew]").disabled = !ok;
-    if (!ok && sel.value === "crew") sel.value = "public";
-    $("#vis-hint").textContent = sel.value === "crew" ? "Only members of " + ((crewById[host] || {}).name || "this crew") + " will see it." :
-      (host && !memberOf(host) ? "Crew-only meets are for members of the host crew." : "");
+    var hostSel = form.elements.host, opt = sel.querySelector("option[value=crew]");
+    var mine = myMemberCrews();
+    opt.disabled = !mine.length;
+    opt.textContent = mine.length ? "Crew members only" : "Crew members only (join a crew first)";
+    if (sel.value === "crew" && !memberOf(hostSel.value)) {
+      if (changed === "visibility" && mine.length) hostSel.value = mine[0];   // chose crew-only: host = your crew
+      else sel.value = "public";                                              // changed host to a crew you're not in
+    }
+    var host = hostSel.value, hostName = (crewById[host] || MY[host] || {}).name || "this crew";
+    $("#vis-hint").textContent = sel.value === "crew"
+      ? "Only members of " + hostName + " will see it." + (mine.length > 1 ? " Change the host crew above to pick another of your crews." : "")
+      : (!mine.length ? "Join a crew to post meets only its members can see." : "");
   }
 
   /* ---------------- submit modal ---------------- */
@@ -1306,8 +1343,8 @@
   $("#host-select").innerHTML = "<option value=''>— Open / independent —</option>" +
     CREWS.map(function (c) { return "<option value='" + esc(c.id) + "'>" + esc(c.name) + "</option>"; }).join("");
 
-  form.elements.host.addEventListener("change", updateVisibilityField);
-  form.elements.visibility.addEventListener("change", updateVisibilityField);
+  form.elements.host.addEventListener("change", function () { updateVisibilityField("host"); });
+  form.elements.visibility.addEventListener("change", function () { updateVisibilityField("visibility"); });
   function openModal() { if (editing) { editing = null; form.reset(); renderTagChips(); picked = null; $("#pick-coords").textContent = "No location yet"; } setFormMode(false); updateVisibilityField();
     if (authValid()) loadMyCrews();   // pick up crews you joined since the page loaded
     modal.hidden = false; updateGate(); resetDates(); }
