@@ -932,7 +932,11 @@
         renderAccount(); updateGate();
       });
     });
-    BE.onAuthChange(function () { auth = BE.user(); renderAccount(); updateGate(); });
+    BE.onAuthChange(function () {
+      var was = auth && auth.id;
+      auth = BE.user(); renderAccount(); updateGate();
+      if ((auth && auth.id) !== was) { loadRole(); loadMyCrews(); }   // signed in / out / switched account
+    });
     $("#acct-btn").onclick = function (e) {
       e.stopPropagation();
       var m = $("#acct-menu"); m.hidden = !m.hidden;
@@ -1099,7 +1103,7 @@
       var b = e.target.closest("[data-admin-act]"); if (!b) return;
       e.preventDefault(); e.stopPropagation(); adminDo(b);
     });
-    whenGis(loadRole);
+    BE.ready.then(loadRole);
   }
 
   /* ---------------- crews: members, join requests, crew admins ---------------- */
@@ -1284,7 +1288,7 @@
   if (AUTH_ON) {
     $$("[data-crew-close]").forEach(function (b) { b.onclick = closeCrewPanel; });
     $("#crew-panel").addEventListener("click", function (e) { if (e.target.id === "crew-panel") closeCrewPanel(); });
-    whenGis(loadMyCrews);
+    BE.ready.then(loadMyCrews);   // after the saved sign-in is restored (not just when Google's script loads)
   }
 
   // "Who can see it" on the meet form: crew-only needs a host crew you're a member of.
@@ -1304,7 +1308,9 @@
 
   form.elements.host.addEventListener("change", updateVisibilityField);
   form.elements.visibility.addEventListener("change", updateVisibilityField);
-  function openModal() { if (editing) { editing = null; form.reset(); renderTagChips(); picked = null; $("#pick-coords").textContent = "No location yet"; } setFormMode(false); updateVisibilityField(); modal.hidden = false; updateGate(); resetDates(); }
+  function openModal() { if (editing) { editing = null; form.reset(); renderTagChips(); picked = null; $("#pick-coords").textContent = "No location yet"; } setFormMode(false); updateVisibilityField();
+    if (authValid()) loadMyCrews();   // pick up crews you joined since the page loaded
+    modal.hidden = false; updateGate(); resetDates(); }
   function closeModal() {
     if (editing && adminDirty) { setTimeout(function () { location.reload(); }, 300); }
     modal.hidden = true; modal.classList.remove("picking"); $("#pick-hint").hidden = true; map.off("click", onPick);
