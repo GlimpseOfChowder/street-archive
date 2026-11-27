@@ -289,6 +289,23 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
 .signin-gate { text-align: center; padding: 6px 0 10px; }
 .signin-gate p { color: var(--muted); line-height: 1.4; margin: 0 0 14px; }
 
+/* ================= Admin ================= */
+.btn-danger { background: rgba(255,59,59,.12); border-color: rgba(255,59,59,.5); color: #ff8080; }
+.btn-danger:hover { background: rgba(255,59,59,.25); }
+.leaflet-container .pop .btn-danger { color: #ff8080; }
+.acct-actions { display: flex; gap: 8px; }
+.admin-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 2px; padding-top: 8px; border-top: 1px dashed rgba(255,59,59,.35); font-size: 13px; }
+.admin-row > span { color: #ff8080; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; font-size: 11px; margin-right: 2px; }
+.admin-card { width: min(640px, 100%); }
+.admin-list { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 8px; }
+.admin-item { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.03); }
+.admin-item .ai-main { min-width: 0; }
+.admin-item .ai-main b { margin-left: 4px; }
+.admin-item .ai-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: none; }
+.admin-item a { color: var(--acc); }
+.small { font-size: 12px; }
+#admin-tabs .chip b { margin-left: 4px; }
+
 /* ================= Boot loader / honeypot ================= */
 .boot { position: fixed; inset: 0; z-index: 5000; display: grid; place-content: center; justify-items: center; gap: 14px; background: var(--bg); transition: opacity .35s; }
 .boot img { height: 70px; animation: bootpulse 1.2s ease-in-out infinite; }
@@ -306,6 +323,8 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
   #btn-submit { width: 42px; height: 42px; padding: 0; border-radius: 50%; font-size: 24px; line-height: 1; }
   #btn-submit .lbl { display: none; }
   .acct-menu { position: fixed; left: 10px; right: 10px; top: 62px; width: auto; }
+  .admin-item { flex-direction: column; align-items: stretch; }
+  .admin-item .ai-btns { justify-content: flex-start; }
 
   .panel, .panel.collapsed {
     top: auto; left: 0; right: 0; bottom: 0; width: auto;

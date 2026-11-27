@@ -1,12 +1,15 @@
 # Street Archive
 
-Runs on free tiers: GitHub Pages (hosting), a Google Sheet + Apps Script (database), Google sign-in (accounts for posting) and CARTO / Esri / OpenStreetMap (maps). Browsing is open to everyone; posting needs a Google account and admin approval.
+A GTA / NFS-style turf map for car crews: club territories, meets, cruises and shows.
+Runs on free tiers: GitHub Pages (hosting), a Google Sheet + Apps Script (database),
+Google sign-in (accounts for posting) and CARTO / Esri / OpenStreetMap (maps).
+Browsing is open to everyone; posting needs a Google account and admin approval.
 
 ## Files
 
 | File | What it's for |
 |---|---|
-| `data/crews.js` | Crews / clubs and their turf (circle or polygon). **Edit this to add crews.** |
+| `data/crews.js` | Optional hard-coded crews (empty — crews now live in the Google Sheet). |
 | `data/events.js` | Meets, cruises, shows. **Edit this to post meets.** Delete the 3 `sample` entries once you have real ones. |
 | `js/config.js` | Map keys, Google Sheet link, start position, reminder lead time. |
 | `privacy.html` | Privacy policy (linked from the site footer and Google sign-in screen). |
@@ -75,6 +78,14 @@ so their posts go live without approval (and skip the daily limit).
 
 Sign-in doesn't work when opening `index.html` by double-click — use the live site or localhost.
 Once public with sign-in, you're collecting emails → add a short privacy policy page (also needed for Play Store).
+
+## Admin panel
+
+Users tab → tick **admin** for an account (sign in on the site once first so the row exists).
+That account gets **Admin panel** in its account menu (Pending / Live / Archived — Approve,
+Archive, Restore, Delete) and Archive / Delete buttons on crew and meet popups.
+Admins' own posts go live immediately. **Archive** hides but keeps; **Delete** removes the row for good.
+Only things stored in the Sheet can be managed there — entries in `data/*.js` are edited on GitHub.
 
 ## Running it locally
 

@@ -49,14 +49,14 @@
     return { id: str(r.id), name: str(r.name), area: str(r.area), link: str(r.link), logo: goodLogo(logo),
       color: /^#[0-9a-f]{6}$/i.test(str(r.color)) ? str(r.color) : "#ff3b3b",
       tags: str(r.tags) ? str(r.tags).split(",").map(str).filter(Boolean) : [],
-      turf: { center: [lat, lng], radius: Math.round((num(r.radius_km) || 3) * 1000) } };
+      turf: { center: [lat, lng], radius: Math.round((num(r.radius_km) || 3) * 1000) }, _src: "sheet" };
   }
   function remoteEvent(r) {
     var lat = num(r.lat), lng = num(r.lng);
     if (!str(r.id) || !str(r.title) || !str(r.start) || lat === null || lng === null) return null;
     return { id: str(r.id), title: str(r.title), type: str(r.type) || "meet", host: str(r.host),
       start: str(r.start), end: str(r.end) || undefined, place: str(r.place), coords: [lat, lng],
-      details: str(r.details), link: str(r.link) };
+      details: str(r.details), link: str(r.link), _src: "sheet" };
   }
   var TZ = "Asia/Manila";
   var LABEL_ZOOM = 11;
@@ -259,7 +259,7 @@
         (c.logo ? "<img src='" + esc(c.logo) + "' alt=''>" : "") +
         "<div>" + (link ? "<a href='" + esc(link) + "' target='_blank' rel='noopener'>" + esc(c.name) + " ↗</a>" : "<b>" + esc(c.name) + "</b>") +
         (c.tags && c.tags.length ? "<br>" + c.tags.map(function (x) { return "<span class='tag tag-type'>" + esc(x) + "</span>"; }).join("") : "") +
-        "</div></div>";
+        "</div></div>" + adminButtons("crew", c);
     });
     var ids = t.crews.map(function (c) { return c.id; });
     var ups = EVENTS.filter(function (e) { return ids.indexOf(e.host) > -1; }).slice(0, 3);
@@ -315,6 +315,7 @@
     html += "<a class='btn sm' target='_blank' rel='noopener' href='https://www.google.com/maps/dir/?api=1&destination=" + dest + "'>Maps</a>";
     html += "<button class='btn sm' data-share='meet=" + esc(e.id) + "'>Share</button>";
     if (link) html += "<a class='btn sm' target='_blank' rel='noopener' href='" + esc(link) + "'>Event page ↗</a>";
+    html += "</div>" + adminButtons("meet", e) + "<div>";
     return html + "</div></div>";
   }
 
@@ -660,13 +661,14 @@
     if (!p) { toast("Sign-in failed", "Please try again."); return; }
     auth = { token: resp.credential, exp: p.exp, name: p.name || p.email, email: p.email, picture: p.picture || "" };
     store.set("auth", auth); store.set("wasSignedIn", true);
-    renderAccount(); updateGate();
+    renderAccount(); updateGate(); loadRole();
     toast("Signed in", "Welcome, " + (auth.name || "").split(" ")[0] + "!");
   }
   function signOut() {
     auth = null; store.set("auth", null); store.set("wasSignedIn", false);
     var g = gis(); if (g) g.disableAutoSelect();
     renderAccount(); updateGate(); $("#acct-menu").hidden = true;
+    ROLE = { admin: false, trusted: false }; $("#acct-admin").hidden = true; document.body.classList.remove("is-admin");
     toast("Signed out");
   }
   function renderGisButton(el, wide) {
@@ -713,7 +715,7 @@
         var items = res.items || [];
         list.innerHTML = items.length ? items.map(function (it) {
           return "<li" + (it.approved && it.kind === "meet" && eventById[it.id] ? " data-goto-meet='" + esc(it.id) + "'" : it.approved && crewById[it.id] ? " data-goto-crew='" + esc(it.id) + "'" : "") + ">" +
-            "<span class='tag " + (it.approved ? "tag-live" : "tag-sample") + "'>" + (it.approved ? "Live" : "Pending") + "</span>" +
+            "<span class='tag " + (it.approved ? "tag-live" : "tag-sample") + "'>" + (it.archived ? "Archived" : it.approved ? "Live" : "Pending") + "</span>" +
             esc(it.label) + " <span class='muted'>· " + esc(it.kind) + "</span></li>";
         }).join("") : "<li class='muted'>No posts yet. Tap + to add a meet or your crew.</li>";
       }).catch(function () { list.innerHTML = "<li class='muted'>Couldn't load your posts.</li>"; });
@@ -734,6 +736,98 @@
     document.addEventListener("click", function (e) { if (!e.target.closest("#account")) $("#acct-menu").hidden = true; });
   }
   renderAccount();
+
+  /* ---------------- admin tools (Users tab → tick "admin") ---------------- */
+  var ROLE = { admin: false, trusted: false };
+  function api(body) {
+    body.idToken = auth && auth.token;
+    return fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); });
+  }
+  function loadRole() {
+    if (!AUTH_ON || !authValid()) { ROLE = { admin: false, trusted: false }; $("#acct-admin").hidden = true; return; }
+    api({ action: "whoami" }).then(function (r) {
+      if (!r || !r.ok) return;
+      ROLE = { admin: !!r.admin, trusted: !!r.trusted };
+      $("#acct-admin").hidden = !ROLE.admin;
+      if (ROLE.admin) document.body.classList.add("is-admin");
+    }).catch(function () {});
+  }
+  function adminButtons(k, item) {
+    if (!ROLE.admin) return "";
+    if (item._src !== "sheet") return "<div class='admin-row muted'>Admin: this " + k + " is in the site's data files — edit it on GitHub.</div>";
+    return "<div class='admin-row'><span>Admin</span>" +
+      "<button class='btn sm' data-admin-act='admin_archive' data-kind='" + k + "' data-id='" + esc(item.id) + "' data-label='" + esc(item.name || item.title) + "'>Archive</button>" +
+      "<button class='btn sm btn-danger' data-admin-act='admin_delete' data-kind='" + k + "' data-id='" + esc(item.id) + "' data-label='" + esc(item.name || item.title) + "'>Delete</button></div>";
+  }
+  var adminDirty = false, adminTab = "pending", adminItems = [];
+  function adminDo(btn) {
+    var act = btn.dataset.adminAct, label = btn.dataset.label || btn.dataset.id;
+    if (act === "admin_delete" && !window.confirm("Permanently delete “" + label + "”? This can't be undone.\n(Tip: Archive hides it but keeps it.)")) return;
+    btn.disabled = true;
+    api({ action: act, kind: btn.dataset.kind, id: btn.dataset.id }).then(function (r) {
+      if (!r.ok) throw new Error(r.error || "Failed");
+      var verb = { admin_approve: "Approved", admin_archive: "Archived", admin_restore: "Restored", admin_delete: "Deleted" }[act];
+      toast(verb + ": " + label);
+      adminDirty = true;
+      if (!$("#admin-panel").hidden) loadAdmin();
+      else setTimeout(function () { location.reload(); }, 1200);
+    }).catch(function (e) { btn.disabled = false; toast("Couldn't do that", e.message); });
+  }
+  function loadAdmin() {
+    var list = $("#admin-list");
+    if (!adminItems.length) list.innerHTML = "<li class='muted'>Loading…</li>";
+    api({ action: "admin_list" }).then(function (r) {
+      if (!r.ok) throw new Error(r.error);
+      adminItems = r.items || [];
+      renderAdmin();
+    }).catch(function (e) { list.innerHTML = "<li class='muted'>Couldn't load: " + esc(e.message || "") + "</li>"; });
+  }
+  function renderAdmin() {
+    var counts = { pending: 0, live: 0, archived: 0 };
+    adminItems.forEach(function (i) { counts[i.status]++; });
+    $$("#admin-tabs .chip").forEach(function (c) {
+      c.classList.toggle("active", c.dataset.t === adminTab);
+      c.querySelector("b").textContent = counts[c.dataset.t] || 0;
+    });
+    var items = adminItems.filter(function (i) { return i.status === adminTab; });
+    $("#admin-list").innerHTML = items.length ? items.map(function (i) {
+      var btns = [];
+      if (i.status === "pending") btns.push(["admin_approve", "Approve", "btn-accent"], ["admin_archive", "Archive", ""]);
+      if (i.status === "live") btns.push(["admin_archive", "Archive", ""]);
+      if (i.status === "archived") btns.push(["admin_restore", "Restore", ""]);
+      btns.push(["admin_delete", "Delete", "btn-danger"]);
+      var when = i.kind === "meet" && i.start ? (function () { var d = parseDate(i.start); return d ? fmtFull.format(d) : i.start; })() : "";
+      return "<li class='admin-item'>" +
+        "<div class='ai-main'><span class='tag tag-type'>" + esc(i.kind) + "</span><b>" + esc(i.label) + "</b>" +
+        "<div class='muted'>" + esc([when, i.where].filter(Boolean).join(" · ")) + "</div>" +
+        "<div class='muted small'>by " + esc(i.by || "—") + " · " + esc(i.submitted_at) +
+        (i.lat !== "" && i.lat != null ? " · <a href='https://www.google.com/maps?q=" + esc(i.lat) + "," + esc(i.lng) + "' target='_blank' rel='noopener'>map</a>" : "") + "</div></div>" +
+        "<div class='ai-btns'>" + btns.map(function (b) {
+          return "<button class='btn sm " + b[2] + "' data-admin-act='" + b[0] + "' data-kind='" + esc(i.kind) + "' data-id='" + esc(i.id) + "' data-label='" + esc(i.label) + "'>" + b[1] + "</button>";
+        }).join("") + "</div></li>";
+    }).join("") : "<li class='muted'>Nothing " + adminTab + ".</li>";
+  }
+  function openAdmin() {
+    $("#acct-menu").hidden = true;
+    $("#admin-panel").hidden = false; adminDirty = false;
+    loadAdmin();
+  }
+  function closeAdmin() {
+    $("#admin-panel").hidden = true;
+    if (adminDirty) { toast("Refreshing the map…"); setTimeout(function () { location.reload(); }, 600); }
+  }
+  if (AUTH_ON) {
+    $("#acct-admin").onclick = openAdmin;
+    $$("[data-admin-close]").forEach(function (b) { b.onclick = closeAdmin; });
+    $("#admin-panel").addEventListener("click", function (e) { if (e.target.id === "admin-panel") closeAdmin(); });
+    $$("#admin-tabs .chip").forEach(function (c) { c.onclick = function () { adminTab = c.dataset.t; renderAdmin(); }; });
+    document.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-admin-act]"); if (!b) return;
+      e.preventDefault(); e.stopPropagation(); adminDo(b);
+    });
+    whenGis(loadRole);
+  }
 
   /* ---------------- submit modal ---------------- */
   var modal = $("#modal"), form = $("#submit-form"), kind = "meet", picked = null, pickMarker = null;

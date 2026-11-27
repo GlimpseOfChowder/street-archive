@@ -3,9 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Street Archive — Car Crew Turf Map</title>
-  <meta name="description" content="Street Archive: the turf map for car crews. Find clubs, meets, cruises and shows near you.">
+  <title>Street Archive: Car Scene Map</title>
+  <meta name="description" content="Street Archive: Car Scene Map — the turf map for car crews in the Philippines. Find clubs, meets, cruises and car shows near you.">
   <meta name="theme-color" content="#0b0d12">
+  <meta property="og:title" content="Street Archive: Car Scene Map">
+  <meta property="og:description" content="Car crews, turf, meets, cruises and car shows in the Philippines — on one map.">
+  <meta property="og:image" content="https://glimpseofchowder.github.io/street-archive/club_logos/site_logo.png">
+  <meta property="og:url" content="https://glimpseofchowder.github.io/street-archive/">
   <link rel="icon" href="club_logos/site_logo.png">
 
   <!-- Leaflet (free, open-source map library) -->
@@ -46,7 +50,7 @@
           <div class="acct-who"><b id="acct-name"></b><span id="acct-email" class="muted"></span></div>
           <h5>My posts</h5>
           <ul id="acct-posts" class="acct-posts"></ul>
-          <button id="acct-signout" class="btn sm">Sign out</button>
+          <div class="acct-actions"><button id="acct-admin" class="btn sm btn-accent" hidden>Admin panel</button><button id="acct-signout" class="btn sm">Sign out</button></div>
         </div>
       </div>
     </div>
@@ -184,6 +188,21 @@
           <button type="submit" id="submit-go" class="btn btn-accent">Generate entry</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ===== Admin panel ===== -->
+  <div id="admin-panel" class="modal" hidden>
+    <div class="modal-card admin-card" role="dialog" aria-modal="true" aria-labelledby="admin-title">
+      <button class="modal-x" data-admin-close aria-label="Close">×</button>
+      <h2 id="admin-title">Admin</h2>
+      <div class="chips" id="admin-tabs">
+        <button class="chip active" data-t="pending">Pending <b>0</b></button>
+        <button class="chip" data-t="live">Live <b>0</b></button>
+        <button class="chip" data-t="archived">Archived <b>0</b></button>
+      </div>
+      <ul id="admin-list" class="admin-list"></ul>
+      <p class="muted small">Archive hides something from the map but keeps it (restore anytime). Delete removes it from the Sheet for good. Ban accounts in the Sheet's Users tab.</p>
     </div>
   </div>
 
