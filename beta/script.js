@@ -867,9 +867,14 @@
         if (res.auth) { list.innerHTML = "<li class='muted'>Please sign in again.</li>"; return; }
         var items = res.items || [];
         list.innerHTML = items.length ? items.map(function (it) {
-          return "<li" + (it.approved && it.kind === "meet" && eventById[it.id] ? " data-goto-meet='" + esc(it.id) + "'" : it.approved && crewById[it.id] ? " data-goto-crew='" + esc(it.id) + "'" : "") + ">" +
+          var go = it.approved && it.kind === "meet" && eventById[it.id] ? " data-goto-meet='" + esc(it.id) + "'"
+                 : it.approved && it.kind === "crew" && crewById[it.id] ? " data-goto-crew='" + esc(it.id) + "'"
+                 : it.approved && it.kind === "place" && placeById[it.id] ? " data-goto-place='" + esc(it.id) + "'" : "";
+          return "<li class='my-post'><div class='mp-main'" + go + ">" +
             "<span class='tag " + (it.approved ? "tag-live" : "tag-sample") + "'>" + (it.archived ? "Archived" : it.approved ? "Live" : "Pending") + "</span>" +
-            esc(it.label) + " <span class='muted'>· " + esc(it.kind) + "</span></li>";
+            esc(it.label) + " <span class='muted'>· " + esc(KIND_NAME[it.kind] || it.kind) + "</span></div>" +
+            "<div class='mp-btns'><button class='btn sm' data-edit='" + esc(it.id) + "' data-kind='" + esc(it.kind) + "'>Edit</button>" +
+            "<button class='btn sm btn-danger' data-del='" + esc(it.id) + "' data-kind='" + esc(it.kind) + "'>Delete</button></div></li>";
         }).join("") : "<li class='muted'>No posts yet. Tap + to add a meet or your crew.</li>";
       }).catch(function () { list.innerHTML = "<li class='muted'>Couldn't load your posts.</li>"; });
   }
@@ -907,7 +912,7 @@
     if (!ROLE.admin) return "";
     if (item._src !== "sheet") return "<div class='admin-row muted'>Admin: this " + k + " is in the site's data files — edit it on GitHub.</div>";
     return "<div class='admin-row'><span>Admin</span>" +
-      (k === "meet" ? "<button class='btn sm btn-accent' data-admin-edit='" + esc(item.id) + "'>Edit</button>" : "") +
+      "<button class='btn sm btn-accent' data-edit='" + esc(item.id) + "' data-kind='" + k + "'>Edit</button>" +
       "<button class='btn sm' data-admin-act='admin_archive' data-kind='" + k + "' data-id='" + esc(item.id) + "' data-label='" + esc(item.name || item.title) + "'>Archive</button>" +
       "<button class='btn sm btn-danger' data-admin-act='admin_delete' data-kind='" + k + "' data-id='" + esc(item.id) + "' data-label='" + esc(item.name || item.title) + "'>Delete</button></div>";
   }
@@ -918,7 +923,7 @@
     btn.disabled = true;
     api({ action: act, kind: btn.dataset.kind, id: btn.dataset.id }).then(function (r) {
       if (!r.ok) throw new Error(r.error || "Failed");
-      var verb = { admin_approve: "Approved", admin_archive: "Archived", admin_restore: "Restored", admin_delete: "Deleted" }[act];
+      var verb = { admin_approve: "Approved", admin_archive: "Archived", admin_restore: "Restored", admin_delete: "Deleted", admin_reviewed: "Marked as reviewed" }[act];
       toast(verb + ": " + label);
       adminDirty = true;
       if (!$("#admin-panel").hidden) loadAdmin();
@@ -948,12 +953,14 @@
       if (i.status === "live") btns.push(["admin_archive", "Archive", ""]);
       if (i.status === "archived") btns.push(["admin_restore", "Restore", ""]);
       btns.push(["admin_delete", "Delete", "btn-danger"]);
-      var editBtn = i.kind !== "meet" ? "" : i.status === "archived"
-        ? "<button class='btn sm btn-accent' data-admin-edit='" + esc(i.id) + "' data-repost='1' title='Change the date and put it back on the map'>Repost…</button>"
-        : "<button class='btn sm' data-admin-edit='" + esc(i.id) + "'>Edit</button>";
+      var editBtn = (i.kind === "meet" && i.status === "archived")
+        ? "<button class='btn sm btn-accent' data-edit='" + esc(i.id) + "' data-kind='meet' data-repost='1' title='Change the date and put it back on the map'>Repost…</button>"
+        : "<button class='btn sm' data-edit='" + esc(i.id) + "' data-kind='" + esc(i.kind) + "'>Edit</button>";
+      if (i.edited && i.status === "live") btns.unshift(["admin_reviewed", "Looks OK", ""]);
       var when = i.kind === "meet" && i.start ? (function () { var d = parseDate(i.start); return d ? fmtFull.format(d) : i.start; })() : "";
       return "<li class='admin-item'>" +
-        "<div class='ai-main'><span class='tag tag-type'>" + esc(i.kind) + "</span><b>" + esc(i.label) + "</b>" +
+        "<div class='ai-main'><span class='tag tag-type'>" + esc(KIND_NAME[i.kind] || i.kind) + "</span>" +
+        (i.edited ? "<span class='tag tag-edited' title='Changed by the poster'>Edited " + esc(i.edited) + "</span>" : "") + "<b>" + esc(i.label) + "</b>" +
         "<div class='muted'>" + esc([when, i.where].filter(Boolean).join(" · ")) + "</div>" +
         "<div class='muted small'>by " + esc(i.by || "—") + " · " + esc(i.submitted_at) +
         (i.lat !== "" && i.lat != null ? " · <a href='https://www.google.com/maps?q=" + esc(i.lat) + "," + esc(i.lng) + "' target='_blank' rel='noopener'>map</a>" : "") + "</div></div>" +
@@ -988,7 +995,7 @@
   $("#host-select").innerHTML = "<option value=''>— Open / independent —</option>" +
     CREWS.map(function (c) { return "<option value='" + esc(c.id) + "'>" + esc(c.name) + "</option>"; }).join("");
 
-  function openModal() { if (editing) { editing = null; form.reset(); picked = null; $("#pick-coords").textContent = "No location yet"; } setFormMode(false); modal.hidden = false; updateGate(); resetDates(); }
+  function openModal() { if (editing) { editing = null; form.reset(); renderTagChips(); picked = null; $("#pick-coords").textContent = "No location yet"; } setFormMode(false); modal.hidden = false; updateGate(); resetDates(); }
   function closeModal() {
     if (editing && adminDirty) { setTimeout(function () { location.reload(); }, 300); }
     modal.hidden = true; modal.classList.remove("picking"); $("#pick-hint").hidden = true; map.off("click", onPick);
@@ -1001,55 +1008,59 @@
   document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !modal.hidden) closeModal(); });
 
   $$(".seg-btn").forEach(function (b) {
-    b.onclick = function () {
-      kind = b.dataset.kind;
-      $$(".seg-btn").forEach(function (x) { x.classList.toggle("active", x === b); });
-      $(".kind-meet").hidden = kind !== "meet";
-      $(".kind-crew").hidden = kind !== "crew";
-      $(".kind-place").hidden = kind !== "place";
-      $("#out").hidden = true;
-    };
+    b.onclick = function () { showKind(b.dataset.kind); $("#out").hidden = true; };
   });
 
-  /* ---------------- admin: edit a meet (reuses the submit form) ---------------- */
-  var editing = null; // { id } while editing an existing meet
-  function setFormMode(edit) {
-    $("#modal-title").textContent = edit ? "Edit meet" : "Put it on the map";
+  /* ---------------- edit a post (poster or admin; reuses the submit form) ---------------- */
+  var editing = null; // { kind, id, repost } while editing an existing post
+  var KIND_NAME = { meet: "meet", crew: "crew", place: "shop" };
+  function setFormMode(edit, k) {
+    $("#modal-title").textContent = edit ? "Edit " + KIND_NAME[k || "meet"] : "Put it on the map";
     $(".seg").hidden = !!edit;
     $$(".only-sheet").forEach(function (el) { el.hidden = true; });
     $("#submit-go").textContent = edit ? "Save changes" : (API ? "Submit for approval" : "Generate entry");
   }
-  function findMeetForEdit(id) {
-    var e = eventById[id];
-    if (e) return { id: e.id, title: e.title, type: e.type, host: e.host, start: e.start, end: e.end || "",
-                    place: e.place, details: e.details, link: e.link, coords: e.coords };
-    var i = adminItems.filter(function (x) { return x.kind === "meet" && x.id === id; })[0];
-    if (i) return { id: i.id, title: i.label, type: i.type, host: i.host, start: i.start, end: i.end || "",
-                    place: i.where, details: i.details, link: i.link, coords: [Number(i.lat), Number(i.lng)] };
-    return null;
+  function showKind(k) {
+    kind = k;
+    $$(".seg-btn").forEach(function (x) { x.classList.toggle("active", x.dataset.kind === k); });
+    $(".kind-meet").hidden = k !== "meet"; $(".kind-crew").hidden = k !== "crew"; $(".kind-place").hidden = k !== "place";
   }
-  function openEdit(id, repost) {
-    var m = findMeetForEdit(id);
-    if (!m) { toast("Couldn't find that meet", "Refresh and try again."); return; }
+  function openEdit(k, id, repost) {
+    if (!authValid()) { toast("Please sign in again"); return; }
+    $("#acct-menu").hidden = true;
     if (!$("#admin-panel").hidden) $("#admin-panel").hidden = true; // keep adminDirty so the map refreshes after
     map.closePopup();
+    toast("Opening…", "", 1200);
+    api({ action: "get", kind: k, id: id }).then(function (r) {
+      if (!r.ok) throw new Error(r.error || "Couldn't load it");
+      fillEdit(r.item, !!repost);
+    }).catch(function (e) { toast("Couldn't open that post", e.message); });
+  }
+  function fillEdit(m, repost) {
     form.reset(); $("#out").hidden = true;
-    editing = { id: m.id, repost: !!repost };
-    kind = "meet";
-    $$(".seg-btn").forEach(function (x) { x.classList.toggle("active", x.dataset.kind === "meet"); });
-    $(".kind-meet").hidden = false; $(".kind-crew").hidden = true;
-    setFormMode(true);
-    var hostSel = $("#host-select");
-    if (m.host && !hostSel.querySelector("option[value='" + m.host.replace(/'/g, "") + "']")) {
-      var o = document.createElement("option"); o.value = m.host; o.textContent = m.host; hostSel.appendChild(o);
-    }
+    editing = { kind: m.kind, id: m.id, repost: repost };
+    showKind(m.kind);
+    setFormMode(true, m.kind);
     var set = function (n, v) { var el = form.elements[n]; if (el) el.value = v == null ? "" : v; };
-    set("title", m.title); set("type", m.type || "meet"); set("host", m.host || "");
-    set("start_date", (m.start || "").slice(0, 10)); set("start_time", (m.start || "").slice(11, 16));
-    set("end_date", (m.end || "").slice(0, 10)); set("end_time", (m.end || "").slice(11, 16));
-    set("place", m.place); set("details", m.details); set("link", m.link);
-    $$("#submit-form input[type=date]").forEach(function (d) { d.min = ""; }); // past/ongoing meets are editable
-    picked = (m.coords && isFinite(m.coords[0])) ? [m.coords[0], m.coords[1]] : null;
+    if (m.kind === "meet") {
+      var hostSel = $("#host-select");
+      if (m.host && !hostSel.querySelector("option[value='" + m.host.replace(/'/g, "") + "']")) {
+        var o = document.createElement("option"); o.value = m.host; o.textContent = m.host; hostSel.appendChild(o);
+      }
+      set("title", m.title); set("type", m.type || "meet"); set("host", m.host || "");
+      set("start_date", (m.start || "").slice(0, 10)); set("start_time", (m.start || "").slice(11, 16));
+      set("end_date", (m.end || "").slice(0, 10)); set("end_time", (m.end || "").slice(11, 16));
+      set("place", m.place); set("details", m.details); set("link", m.link);
+      $$("#submit-form input[type=date]").forEach(function (d) { d.min = ""; }); // past/ongoing meets are editable
+    } else if (m.kind === "crew") {
+      set("name", m.name); set("area", m.area); set("color", m.color || "#ff3b3b"); set("radius", m.radius || 3);
+      set("logo", (m.logo || "").replace(/^club_logos\//, "")); set("pagelink", m.link); set("tags", m.tags);
+    } else {
+      set("pname", m.name); set("pcategory", m.category || "mechanic"); renderTagChips();
+      $$("#ptag-chips input").forEach(function (i) { i.checked = (m.tags || []).indexOf(i.value) > -1; });
+      set("parea", m.area); set("hours", m.hours); set("phone", m.phone); set("plink", m.link); set("pdetails", m.details);
+    }
+    picked = (m.coords && isFinite(m.coords[0]) && m.coords[0] !== null) ? [m.coords[0], m.coords[1]] : null;
     if (picked) setPin(picked);
     $("#pick-coords").textContent = picked ? picked.join(", ") + " (tap 📍 to move)" : "No location yet";
     if (repost) {
@@ -1068,10 +1079,25 @@
     modal.hidden = false; updateGate(); updateDtHint();
   }
   document.addEventListener("click", function (e) {
-    var b = e.target.closest("[data-admin-edit]"); if (!b) return;
+    var b = e.target.closest("[data-edit]"); if (!b) return;
     e.preventDefault(); e.stopPropagation();
-    if (!ROLE.admin) return;
-    openEdit(b.dataset.adminEdit, b.dataset.repost === "1");
+    openEdit(b.dataset.kind || "meet", b.dataset.edit, b.dataset.repost === "1");
+  });
+  // Delete your own post: tap once, then tap again to confirm.
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-del]"); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (!b.classList.contains("confirm")) {
+      b.classList.add("confirm"); b.dataset.txt = b.textContent; b.textContent = "Tap again to delete";
+      setTimeout(function () { if (b.isConnected) { b.classList.remove("confirm"); b.textContent = b.dataset.txt; } }, 4000);
+      return;
+    }
+    b.disabled = true; b.textContent = "Deleting…";
+    api({ action: "delete", kind: b.dataset.kind, id: b.dataset.del }).then(function (r) {
+      if (!r.ok) throw new Error(r.error || "Couldn't delete");
+      toast("Deleted", "Refreshing the map…", 2500);
+      setTimeout(function () { location.reload(); }, 1200);
+    }).catch(function (err) { b.disabled = false; b.classList.remove("confirm"); b.textContent = b.dataset.txt; toast("Couldn't delete", err.message); });
   });
 
   // Picking a spot: tap the map, drag the pin, search a place/address, paste
@@ -1228,13 +1254,24 @@
     var logo = (f.logo || "").trim();
     var logoPath = /^https?:\/\//i.test(logo) ? logo : (logo ? "club_logos/" + logo : "");
 
-    // ---- Admin edit: save changes to an existing meet ----
+    function payloadFor(k) {
+      var pl = k === "meet"
+        ? { kind: "meet", title: f.title, type: f.type, host: f.host, start: f.start, end: f.end, place: f.place, details: f.details, link: f.link }
+        : k === "place"
+        ? { kind: "place", name: f.pname, category: f.pcategory, area: f.parea, tags: new FormData(form).getAll("ptag").join(", "),
+            hours: f.hours, phone: f.phone, link: f.plink, details: f.pdetails }
+        : { kind: "crew", name: f.name, area: f.area, color: f.color, radius: f.radius, logo: logoPath, link: f.pagelink, tags: f.tags };
+      pl.lat = picked[0]; pl.lng = picked[1];
+      return pl;
+    }
+
+    // ---- Edit: save changes to an existing post (yours, or any if you're the admin) ----
     if (editing && API) {
       if (sending) return;
       sending = true;
       var sbtn = $("#submit-go"); sbtn.disabled = true; sbtn.textContent = "Saving…";
-      api({ action: "admin_update", kind: "meet", id: editing.id, title: f.title, type: f.type, host: f.host,
-            start: f.start, end: f.end, place: f.place, details: f.details, link: f.link, lat: picked[0], lng: picked[1] })
+      var up = payloadFor(editing.kind); up.action = "update"; up.id = editing.id;
+      api(up)
         .then(function (r) {
           if (r.auth) { updateGate(); throw new Error("Please sign in again."); }
           if (!r.ok) throw new Error(r.error || "Couldn't save");
@@ -1258,13 +1295,7 @@
       if (sending) return;
       sending = true;
       var btn = $("#submit-go"); btn.disabled = true; btn.textContent = "Sending…";
-      var payload = kind === "meet"
-        ? { kind: "meet", title: f.title, type: f.type, host: f.host, start: f.start, end: f.end, place: f.place, details: f.details, link: f.link }
-        : kind === "place"
-        ? { kind: "place", name: f.pname, category: f.pcategory, area: f.parea, tags: new FormData(form).getAll("ptag").join(", "),
-            hours: f.hours, phone: f.phone, link: f.plink, details: f.pdetails }
-        : { kind: "crew", name: f.name, area: f.area, color: f.color, radius: f.radius, logo: logoPath, link: f.pagelink, tags: f.tags };
-      payload.lat = picked[0]; payload.lng = picked[1]; payload.contact = f.contact; payload.website = f.website;
+      var payload = payloadFor(kind); payload.contact = f.contact; payload.website = f.website;
       payload.action = "submit";
       if (AUTH_ON && !authValid()) { sending = false; btn.disabled = false; btn.textContent = "Submit for approval"; updateGate(); toast("Please sign in again", "Your session expired."); return; }
       BE.call(payload)

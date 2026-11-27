@@ -304,8 +304,16 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
 .acct-who .muted { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
 .acct-menu h5 { margin: 10px 0 6px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 .acct-posts { list-style: none; margin: 0 0 12px; padding: 0; max-height: 220px; overflow-y: auto; display: grid; gap: 6px; font-size: 14px; }
-.acct-posts li[data-goto-meet], .acct-posts li[data-goto-crew] { cursor: pointer; }
-.acct-posts li[data-goto-meet]:hover, .acct-posts li[data-goto-crew]:hover { color: var(--acc); }
+.acct-posts { max-height: 300px; grid-template-columns: minmax(0, 1fr); overflow-x: hidden; }
+.my-post { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.my-post:last-child { border-bottom: 0; }
+.mp-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-main[data-goto-meet], .mp-main[data-goto-crew], .mp-main[data-goto-place] { cursor: pointer; }
+.mp-main[data-goto-meet]:hover, .mp-main[data-goto-crew]:hover, .mp-main[data-goto-place]:hover { color: var(--acc); }
+.mp-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.mp-btns .btn.sm { padding: 4px 9px; font-size: 12px; }
+.btn-danger.confirm { background: #ff3b3b; color: #fff; border-color: #ff3b3b; }
+.tag-edited { background: rgba(255,214,10,.15); color: var(--acc); border: 1px solid rgba(255,214,10,.4); }
 .gsi-slot { min-height: 44px; display: flex; justify-content: center; }
 .signin-gate { text-align: center; padding: 6px 0 10px; }
 .signin-gate p { color: var(--muted); line-height: 1.4; margin: 0 0 14px; }
