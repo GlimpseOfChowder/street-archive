@@ -53,6 +53,16 @@ Tabs **Pending / Reported / Live / Archived**, filtered by **Meets / Crews / Sho
 - **Make someone admin:** tick `is_admin` (they must sign in once first).
 - Edits you make directly in the Supabase Table Editor skip all the posting rules.
 
+## Crews
+
+- Anyone signed in can **Request to join** from a crew's popup. Requests go to the crew's owner/admins —
+  or to you (Admin panel → **Join requests**) while a crew has no leader. **Accept as owner** hands it over.
+- Owners/crew admins: **Manage crew** (popup or account menu → My crews) — accept/decline, make admin,
+  remove, edit crew details, approve/edit/archive the crew's meets, **+ Crew meet**.
+- **Crew members only** meets are visible only to that crew's members; crew admins' meets go live at once.
+- Fix anything by hand in Supabase → Table Editor → `crew_members` (role owner/admin/member, status active/pending).
+- Lists refresh when you come back to the tab and every 90 s; a red ring on the account button = something waiting.
+
 ## Free-plan limits (Supabase)
 
 No card on file → you can't be billed. Free: 500 MB database, 5 GB egress/month, 50,000 monthly
@@ -69,7 +79,7 @@ that). Check **Supabase → Usage** occasionally; a scheduled usage check also r
 ## Roadmap
 
 1. ~~Database + accounts (Supabase)~~ · ~~shops & car washes~~ · ~~edit/delete own posts~~ · ~~reports & auto-trust~~
-2. **Crew roles** — join requests, crew admins approve members and post crew-only meets.
+2. ~~Crew roles~~ — join requests, owners/crew admins, crew-only meets (see "Crews" below).
 3. **Installable web app (PWA) + real push notifications** — Android and iPhone (Add to Home Screen).
 4. **Google Play** — wrap the PWA (Trusted Web Activity). US$25 once; new personal accounts need a
    closed test with 12+ testers for 14 days. Needs `/.well-known/assetlinks.json` at the domain root
@@ -84,6 +94,7 @@ localhost or the live site, not a double-clicked file).
 
 ## Credits / limits
 
-Map data © OpenStreetMap contributors; dark tiles © CARTO; satellite © Esri. Place search uses
-OpenStreetMap Nominatim (max 1 request/second, no search-as-you-type). Get each crew's OK before
+Map data © OpenStreetMap contributors; dark tiles © CARTO; satellite © Esri. Place suggestions as you
+type come from Photon by komoot (free, fair use — the app waits for a pause in typing and caches results);
+OpenStreetMap Nominatim is the fallback when you press Enter (max 1 request/second, no search-as-you-type). Get each crew's OK before
 listing their logo. Describe events as meets/shows/cruises — nothing that promotes street racing.
