@@ -8,14 +8,14 @@ window.SA_CONFIG = {
   // (only while the site is open in a tab — see README for real push).
   reminderMinutesBefore: 60,
 
-  // Google Sheet database: paste your Apps Script Web App URL (ends in /exec).
-  // When set, "+ Submit" sends to the Sheet for approval and the map shows
-  // approved rows. Leave "" to use only data/crews.js + data/events.js.
-  sheetApiUrl: "https://script.google.com/macros/s/AKfycbx6u2xFF8M5zWiDXiar3zPV3JWq70juObLQxyQlswFdCUc4mU-qja9jdNBp_hiEtTDH/exec",
+  // Supabase database (Project Settings → API). The publishable key is safe to
+  // share — the database's own security rules decide what anyone can do.
+  supabaseUrl: "https://mdhhxcdmzduwcfgbamcr.supabase.co",
+  supabaseKey: "sb_publishable__ePovCY0RWe897sAV8WtzQ_VGNO2XUH",
 
-  // Google sign-in for posting (needs sheetApiUrl too). OAuth "Web" client ID from
+  // Google sign-in for posting (needs the Supabase settings above). OAuth "Web" client ID from
   // Google Cloud Console, e.g. 1234-abc.apps.googleusercontent.com. Must match
-  // GOOGLE_CLIENT_ID in google-apps-script/Code.gs. "" = anyone can submit.
+  // Supabase → Authentication → Providers → Google → Client IDs.
   googleClientId: "470626874651-bpmhitt7pfe3knrraamdqt6jtpmtpjgd.apps.googleusercontent.com",
 
   // Optional: paste a Google Form / Tally link here and the "+ Submit"
