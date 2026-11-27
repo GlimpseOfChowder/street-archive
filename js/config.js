@@ -11,7 +11,7 @@ window.SA_CONFIG = {
   // Google Sheet database: paste your Apps Script Web App URL (ends in /exec).
   // When set, "+ Submit" sends to the Sheet for approval and the map shows
   // approved rows. Leave "" to use only data/crews.js + data/events.js.
-  sheetApiUrl: "https://script.google.com/macros/s/AKfycbzo0z9UM_UE2yaZYLh3y0Jj6P1sSDLaVWTE-7k4wCPPsyr5mgCtKTv8tl_l29tpgOoN/exec",
+  sheetApiUrl: "https://script.google.com/macros/s/AKfycbx6u2xFF8M5zWiDXiar3zPV3JWq70juObLQxyQlswFdCUc4mU-qja9jdNBp_hiEtTDH/exec",
 
   // Google sign-in for posting (needs sheetApiUrl too). OAuth "Web" client ID from
   // Google Cloud Console, e.g. 1234-abc.apps.googleusercontent.com. Must match
