@@ -17,53 +17,14 @@
    Past events hide automatically 12 h after their start (or end).
    ===================================================================== */
 
-(function () {
-  // Helper only used by the SAMPLE events so they always look "upcoming".
-  // For real events just write the date string, e.g. "2026-12-12T21:00".
-  function inDays(n, hhmm) {
-    var d = new Date(Date.now() + n * 864e5);
-    var p = function (x) { return String(x).padStart(2, "0"); };
-    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "T" + hhmm;
-  }
-
-  window.SA_EVENTS = [
-    {
-      id: "sample-night-meet",
-      title: "Friday Night Meet (sample)",
-      type: "meet",
-      host: "dts",
-      start: inDays(1, "21:00"),
-      end: inDays(2, "01:00"),
-      place: "Capas town area",
-      coords: [15.3390, 120.5930],
-      details: "Example entry so you can see how meets look. Replace with a real one in data/events.js.",
-      link: "",
-      sample: true
-    },
-    {
-      id: "sample-cruise",
-      title: "Pampanga → Tarlac Cruise (sample)",
-      type: "cruise",
-      host: "hotcakes",
-      start: inDays(5, "06:00"),
-      place: "Pampanga meetup point",
-      coords: [15.1850, 120.5800],
-      details: "Example cruise. Roll-out 6:30 AM sharp.",
-      link: "",
-      sample: true
-    },
-    {
-      id: "sample-show",
-      title: "Stance & Fitment Showcase (sample)",
-      type: "show",
-      host: "stancepilipinas",
-      start: inDays(12, "14:00"),
-      end: inDays(12, "22:00"),
-      place: "Metro Manila venue",
-      coords: [14.5560, 121.0230],
-      details: "Example car show entry.",
-      link: "",
-      sample: true
-    }
-  ];
-})();
+// Meets now come from the Google Sheet (posted via "+ Submit", approved in the
+// Admin panel). Add one here only if you want it hard-coded (it can't be
+// managed from the Admin panel). Example:
+//
+// {
+//   id: "my-meet-2026-12-12", title: "Friday Night Meet", type: "meet",
+//   host: "dts", start: "2026-12-12T21:00", end: "2026-12-13T01:00",
+//   place: "Capas town area", coords: [15.339, 120.593],
+//   details: "Bring your ride.", link: ""
+// },
+window.SA_EVENTS = [];
