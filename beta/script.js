@@ -1204,15 +1204,20 @@
   }
   // Buttons under a crew in its map popup.
   function crewButtons(c) {
-    if (c._src !== "sheet" || !AUTH_ON) return "";
+    if (c._src !== "sheet" || !BE) return "";
     var n = MEMBERS_N[c.id] || 0, m = MY[c.id], id = esc(c.id), b = "";
     if (!authValid() || !m) b = "<button class='btn sm btn-accent' data-join='" + id + "'>Request to join</button>";
     else if (m.status === "pending") b = "<span class='muted small'>Request sent</span><button class='btn sm' data-leave='" + id + "' data-what='cancel'>Cancel</button>";
     else if (runsCrew(c.id)) b = "<button class='btn sm btn-accent' data-manage='" + id + "'>Manage crew" + (m.requests ? " · " + m.requests + " new" : "") + "</button>";
     else b = "<span class='tag tag-live'>✓ " + esc(ROLE_LABEL[m.role] || "Member") + "</span><button class='btn sm' data-leave='" + id + "' data-what='leave'>Leave</button>";
     if (ROLE.admin && !runsCrew(c.id)) b += "<button class='btn sm' data-manage='" + id + "'>Manage</button>";
-    return "<div class='crew-btns'><span class='muted small'>👥 " + n + " member" + (n === 1 ? "" : "s") + "</span>" + b + "</div>";
+    if (!AUTH_ON) b = "";
+    return "<div class='crew-btns'><a href='#' class='crew-count' data-crew-view='" + id + "'>👥 " + n + " member" + (n === 1 ? "" : "s") + "</a>" + b + "</div>";
   }
+  document.addEventListener("click", function (e) {
+    var cv = e.target.closest("[data-crew-view]");
+    if (cv) { e.preventDefault(); e.stopPropagation(); openCrewPanel(cv.dataset.crewView); }
+  });
   document.addEventListener("click", function (e) {
     var j = e.target.closest("[data-join]"), l = e.target.closest("[data-leave]"), mg = e.target.closest("[data-manage]");
     if (!j && !l && !mg) return;
@@ -1260,7 +1265,7 @@
   function loadCrewPanel() {
     var id = panelCrew; if (!id) return;
     $("#crew-panel-body").innerHTML = "<p class='muted'>Loading…</p>";
-    api({ action: "crew_panel", crew_id: id }).then(function (r) {
+    BE.crewPanel({ crew_id: id }).then(function (r) {
       if (!r.ok) throw new Error(r.error);
       if (panelCrew === id) renderCrewPanel(id, r);
     }).catch(function (e) { $("#crew-panel-body").innerHTML = "<p class='muted'>Couldn't load: " + esc(e.message || "") + "</p>"; });
@@ -1278,8 +1283,19 @@
     var active = r.members.filter(function (m) { return m.status === "active"; });
     var rank = { owner: 0, admin: 1, member: 2 };
     active.sort(function (a, b) { return rank[a.role] - rank[b.role]; });
-    var h = "";
-    if (!hasOwner) h += "<p class='crew-note'>This crew has no leader yet. When its leader asks to join, tap <b>Accept as owner</b>.</p>";
+    var h = "", c = crewById[id] || {}, link = safeUrl(c.link);
+    h += "<div class='crew-head' style='--c:" + esc(c.color || "#ffd400") + "'>" + (c.logo ? "<img src='" + esc(c.logo) + "' alt=''>" : "") +
+      "<div><div class='muted small'>" + esc(c.area || "") + (c.verified ? " · <span class='verified'>✔</span> Verified crew" : "") + "</div>" +
+      (link ? "<a class='prof-link' href='" + esc(link) + "' target='_blank' rel='noopener'>Crew page ↗</a>" : "") + "</div>" +
+      (c.turf ? "<button class='btn sm' data-goto-crew='" + esc(id) + "'>Show on map</button>" : "") + "</div>";
+    if (!canMembers && AUTH_ON) {
+      var mm = MY[id];
+      h += "<div class='crew-actions'>" + (!authValid() ? "<button class='btn sm btn-accent' data-join='" + esc(id) + "'>Request to join</button>"
+        : !mm ? "<button class='btn sm btn-accent' data-join='" + esc(id) + "'>Request to join</button>"
+        : mm.status === "pending" ? "<span class='muted small'>Your request is waiting for the crew's admins.</span>"
+        : "<span class='tag tag-live'>✓ You're a " + esc((ROLE_LABEL[mm.role] || "member").toLowerCase()) + "</span>") + "</div>";
+    }
+    if (canMembers && !hasOwner) h += "<p class='crew-note'>This crew has no leader yet. When its leader asks to join, tap <b>Accept as owner</b>.</p>";
     h += "<div class='crew-actions'>" +
       (canMembers ? "<button class='btn sm btn-accent' data-crew-newmeet='" + esc(id) + "'>+ Crew meet</button>" : "") +
       (canMembers ? "<button class='btn sm' data-edit='" + esc(id) + "' data-kind='crew'>Edit crew details</button>" : "") + "</div>";
@@ -1302,6 +1318,24 @@
       return "<li><span class='mav'>" + av(m) + "</span><a href='#' class='mname' data-profile='" + esc(m.user_id) + "'>" + esc(m.name) + (m.user_id === me ? " <small>(you)</small>" : "") + "</a>" +
         "<span class='tag " + (m.role === "member" ? "tag-sample" : "tag-type") + "'>" + esc(ROLE_LABEL[m.role]) + "</span><span class='mbtns'>" + b + "</span></li>";
     }).join("") + (active.length ? "" : "<li class='muted small'>No members yet.</li>") + "</ul>";
+    // crew garage: everyone's cars
+    var names = {}; active.forEach(function (m) { names[m.user_id] = m.name; });
+    var cars = (r.cars || []).filter(function (x) { return names[x.owner]; });
+    if (cars.length) {
+      h += "<h5>Crew garage <b>" + cars.length + "</b></h5><div class='garage crew-garage'>" + cars.map(function (x) {
+        return "<div class='car-card'>" + (x.photo_url ? "<img src='" + esc(x.photo_url) + "' alt='' loading='lazy'>" : "<div class='car-ph'>🚗</div>") +
+          "<div class='car-meta'><b>" + esc(x.nickname || carName(x)) + "</b>" + (x.nickname ? "<small>" + esc(carName(x)) + "</small>" : "") +
+          "<a href='#' class='car-owner' data-profile='" + esc(x.owner) + "'>" + esc(names[x.owner]) + "</a></div></div>";
+      }).join("") + "</div>";
+    }
+    if (!canMembers) {
+      var up = r.meets.filter(function (m) { var d = parseDate(m.start); return m.status === "live" && d && d.getTime() > Date.now() - 12 * 36e5; });
+      if (up.length) h += "<h5>Upcoming meets</h5><ul class='member-list'>" + up.reverse().map(function (m) {
+        var d = parseDate(m.start);
+        return "<li><a href='#' class='mname' data-goto-meet='" + esc(m.id) + "'>" + esc(m.title) + "<small>" + esc(d ? fmtFull.format(d) : "") + "</small></a>" +
+          (m.visibility === "crew" ? "<span class='tag tag-type'>Crew only</span>" : "") + (GOING[m.id] ? "<span class='going-n small'>🚗 " + GOING[m.id] + "</span>" : "") + "</li>";
+      }).join("") + "</ul>";
+    }
     if (canMembers) {
       h += "<h5>Crew meets</h5>";
       h += r.meets.length ? "<ul class='member-list'>" + r.meets.map(function (m) {
@@ -1316,7 +1350,7 @@
           (m.visibility === "crew" ? "<span class='tag tag-type'>Crew only</span>" : "") + "<span class='mbtns'>" + b + "</span></li>";
       }).join("") + "</ul>" : "<p class='muted small'>No meets yet.</p>";
     }
-    if (!canMembers) h += "<p class='muted small'>Only the crew's owner and admins can manage it.</p>";
+
     $("#crew-panel-body").innerHTML = h;
   }
   document.addEventListener("click", function (e) {
@@ -1351,8 +1385,11 @@
       if (ROLE.admin && !$("#admin-panel").hidden) loadAdmin();
     }).catch(function (err) { el.disabled = false; el.classList.remove("confirm"); if (el.dataset.txt) el.textContent = el.dataset.txt; toast("Couldn't do that", err.message); });
   });
+  $("#crew-panel").addEventListener("click", function (e) {
+    if (e.target.closest("[data-goto-meet],[data-goto-crew],[data-profile]")) { $("#crew-panel").hidden = true; panelCrew = null; }
+  }, true);
+  $$("[data-crew-close]").forEach(function (b) { b.onclick = closeCrewPanel; });
   if (AUTH_ON) {
-    $$("[data-crew-close]").forEach(function (b) { b.onclick = closeCrewPanel; });
     $("#crew-panel").addEventListener("click", function (e) { if (e.target.id === "crew-panel") closeCrewPanel(); });
     BE.ready.then(loadMyCrews);   // after the saved sign-in is restored (not just when Google's script loads)
   }
