@@ -1,7 +1,6 @@
 # Street Archive
 
-A GTA / NFS-style turf map for car crews: club territories, meets, cruises and shows.
-Runs 100% free — no backend, no accounts, no API keys.
+Runs on free tiers: GitHub Pages (hosting), a Google Sheet + Apps Script (database), Google sign-in (accounts for posting) and CARTO / Esri / OpenStreetMap (maps). Browsing is open to everyone; posting needs a Google account and admin approval.
 
 ## Files
 
