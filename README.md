@@ -1,6 +1,6 @@
 # Street Archive
 
-A GTA / NFS-style turf map for car crews in the Philippines: club territories, meets, cruises,
+A game-style turf map for car crews in the Philippines: club territories, meets, cruises,
 shows, and car places (mechanic shops, car washes, detailing, tint, tires, parts).
 Social pages use the name **Street Archive: Car Scene Map** (@streetarchivemap).
 
