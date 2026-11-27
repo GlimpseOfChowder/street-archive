@@ -147,10 +147,15 @@
             </label>
             <label>Host crew<select name="host" id="host-select"></select></label>
           </div>
-          <div class="row">
-            <label>Starts<input name="start" type="datetime-local"></label>
-            <label>Ends<input name="end" type="datetime-local"></label>
+          <div class="row dt-row">
+            <label>Start date<input name="start_date" type="date" class="dt"></label>
+            <label>Start time<input name="start_time" type="time" step="900" class="dt" value="21:00"></label>
           </div>
+          <div class="row dt-row">
+            <label>End date <span class="muted">(optional)</span><input name="end_date" type="date" class="dt"></label>
+            <label>End time <span class="muted">(optional)</span><input name="end_time" type="time" step="900" class="dt"></label>
+          </div>
+          <p class="muted small dt-hint" id="dt-hint"></p>
           <label>Venue<input name="place" placeholder="Parking lot / landmark"></label>
           <label>Details<textarea name="details" rows="2" placeholder="Rules, entry fee, theme…"></textarea></label>
           <label>FB event / post link<input name="link" type="url" placeholder="https://facebook.com/…"></label>

@@ -837,7 +837,7 @@
   $("#host-select").innerHTML = "<option value=''>— Open / independent —</option>" +
     CREWS.map(function (c) { return "<option value='" + esc(c.id) + "'>" + esc(c.name) + "</option>"; }).join("");
 
-  function openModal() { modal.hidden = false; updateGate(); }
+  function openModal() { modal.hidden = false; updateGate(); resetDates(); }
   function closeModal() {
     modal.hidden = true; modal.classList.remove("picking"); $("#pick-hint").hidden = true;
     map.getContainer().classList.remove("picking-map");
@@ -879,6 +879,51 @@
   $("#pick-cancel").onclick = function () { map.off("click", onPick); endPick(); };
 
   function slug(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "entry"; }
+  /* ---------------- date / time pickers ---------------- */
+  function pad2(n) { return String(n).padStart(2, "0"); }
+  function phTodayISO() { // today's date in Manila time, YYYY-MM-DD
+    var p = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    return p;
+  }
+  function addDay(iso) { var d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); }
+  // Builds "YYYY-MM-DDTHH:MM" start/end. End date defaults to start date;
+  // an end time earlier than the start time means the meet runs past midnight.
+  function composeWhen(f) {
+    var start = f.start_date && f.start_time ? f.start_date + "T" + f.start_time : "";
+    var end = "";
+    if (start && f.end_time) {
+      var ed = f.end_date || f.start_date;
+      if (!f.end_date && f.end_time <= f.start_time) ed = addDay(f.start_date);
+      end = ed + "T" + f.end_time;
+      if (end <= start) end = "";
+    } else if (start && f.end_date) {
+      end = f.end_date + "T23:59";
+    }
+    return { start: start, end: end };
+  }
+  function updateDtHint() {
+    var f = Object.fromEntries(new FormData(form).entries());
+    var w = composeWhen(f), el = $("#dt-hint");
+    if (!w.start) { el.textContent = ""; return; }
+    var s = parseDate(w.start), e = w.end ? parseDate(w.end) : null;
+    el.textContent = "📅 " + fmtFull.format(s) + (e ? " → " + (w.end.slice(0, 10) === w.start.slice(0, 10) ? fmtTime.format(e) : fmtFull.format(e)) : "");
+  }
+  $$("#submit-form input.dt").forEach(function (inp) {
+    // open the native picker when tapping anywhere on the field
+    inp.addEventListener("click", function () { try { inp.showPicker(); } catch (e) {} });
+    inp.addEventListener("change", updateDtHint);
+    inp.addEventListener("input", updateDtHint);
+  });
+  function resetDates() {
+    var today = phTodayISO();
+    $$("#submit-form input[type=date]").forEach(function (d) { d.min = today; });
+    var sd = $("input[name=start_date]");
+    if (!sd.value) sd.value = today;
+    $("input[name=end_date]").min = sd.value || today;
+    updateDtHint();
+  }
+  $("input[name=start_date]").addEventListener("change", function () { $("input[name=end_date]").min = this.value; });
+
   var sending = false;
   if (API) {
     $("#submit-go").textContent = "Submit for approval";
@@ -887,8 +932,9 @@
   form.addEventListener("submit", function (ev) {
     ev.preventDefault();
     var f = Object.fromEntries(new FormData(form).entries());
+    var when = composeWhen(f); f.start = when.start; f.end = when.end;
     if (!picked) { toast("Pick a location first", "Tap “📍 Pick location on map”."); return; }
-    if (kind === "meet" && (!f.title || !f.start)) { toast("Meet name and start time are required"); return; }
+    if (kind === "meet" && (!f.title || !f.start)) { toast("Meet name, start date and start time are required"); return; }
     if (kind === "crew" && !f.name) { toast("Crew name is required"); return; }
 
     var logo = (f.logo || "").trim();
@@ -911,7 +957,7 @@
         .then(function (res) {
           if (res.auth) { auth.token = ""; store.set("auth", auth); updateGate(); throw new Error("Your session expired — sign in again."); }
           if (!res.ok) throw new Error(res.error || "Couldn't send");
-          closeModal(); form.reset(); picked = null; $("#pick-coords").textContent = "No location yet";
+          closeModal(); form.reset(); picked = null; $("#pick-coords").textContent = "No location yet"; $("#dt-hint").textContent = "";
           if (res.live) { toast("Posted — it's live ✅", "Refreshing the map…", 4000); setTimeout(function () { location.reload(); }, 1800); }
           else toast("Sent for approval ✅", (kind === "meet" ? "Your meet" : "Your crew") + " will show on the map once an admin approves it. Check “My posts” under your account.", 7000);
         })
