@@ -12,7 +12,7 @@
    - Users tab                  → tick "banned" to block, "trusted" to auto-approve,
                                   "admin" to get the in-site admin panel
    - POST {action:"whoami"}     → signed-in user's role (admin / trusted)
-   - POST {action:"admin_*"}    → admins list / approve / archive / restore / delete
+   - POST {action:"admin_*"}    → admins list / approve / archive / restore / delete / update (edit a meet)
    ===================================================================== */
 
 // From Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web).
@@ -238,7 +238,9 @@ function adminAction_(ss, d) {
       rows_(ss, x[0]).forEach(function (o) {
         var at = o.submitted_at instanceof Date ? Utilities.formatDate(o.submitted_at, TZ, "yyyy-MM-dd HH:mm") : String(o.submitted_at);
         var st = o.start instanceof Date ? Utilities.formatDate(o.start, TZ, "yyyy-MM-dd'T'HH:mm") : String(o.start || "");
-        items.push({ kind: x[1], id: String(o.id), label: String(o[x[2]]), where: String(o[x[3]] || ""), start: st,
+        var en = o.end instanceof Date ? Utilities.formatDate(o.end, TZ, "yyyy-MM-dd'T'HH:mm") : String(o.end || "");
+        items.push({ kind: x[1], id: String(o.id), label: String(o[x[2]]), where: String(o[x[3]] || ""), start: st, end: en,
+          type: String(o.type || ""), host: String(o.host || ""), details: String(o.details || ""), link: String(o.link || ""),
           by: String(o.submitted_by || ""), submitted_at: at, lat: o.lat, lng: o.lng,
           status: isTrue_(o.archived) ? "archived" : isTrue_(o.approved) ? "live" : "pending" });
       });
@@ -259,6 +261,17 @@ function adminAction_(ss, d) {
   else if (d.action === "admin_archive") { setBox(xc, true); }
   else if (d.action === "admin_restore") { setBox(xc, false); setBox(ac, true); }
   else if (d.action === "admin_delete") { sh.deleteRow(row._row); }
+  else if (d.action === "admin_update") {
+    if (name !== "Meets") return { ok: false, error: "Only meets can be edited for now." };
+    var DT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+    var lat = Number(d.lat), lng = Number(d.lng);
+    if (!clean_(d.title) || !DT.test(d.start || "")) return { ok: false, error: "Meet name and start time are required." };
+    if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return { ok: false, error: "Pick a location on the map." };
+    var upd = { title: clean_(d.title, 80), type: ["meet", "cruise", "show", "track"].indexOf(d.type) > -1 ? d.type : "meet",
+      host: clean_(d.host, 40), start: d.start, end: DT.test(d.end || "") ? d.end : "", place: clean_(d.place, 120),
+      lat: round_(lat), lng: round_(lng), details: clean_(d.details, 500), link: url_(d.link) };
+    Object.keys(upd).forEach(function (k) { var ci = head.indexOf(k) + 1; if (ci > 0) sh.getRange(row._row, ci).setValue(upd[k]); });
+  }
   else return { ok: false, error: "Unknown action." };
   CacheService.getScriptCache().remove("public");
   return { ok: true };
