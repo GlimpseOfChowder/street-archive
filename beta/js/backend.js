@@ -97,20 +97,21 @@
     return attempt();
   }
 
-  function submit(d) {
+  // Turns form fields into a database row (shared by "submit" and "update").
+  function buildRow(d) {
     var lat = Number(d.lat), lng = Number(d.lng);
-    if (!isFinite(lat) || !isFinite(lng)) return Promise.resolve({ ok: false, error: "Pick a location on the map." });
-    var tbl = table(d.kind), row, base;
+    if (!isFinite(lat) || !isFinite(lng)) return { error: "Pick a location on the map." };
+    var row, base;
     if (d.kind === "meet") {
       var start = fromLocal(d.start);
-      if (!clean(d.title) || !start) return Promise.resolve({ ok: false, error: "Meet name and start time are required." });
+      if (!clean(d.title) || !start) return { error: "Meet name and start time are required." };
       row = { title: clean(d.title, 80), type: d.type || "meet", host_crew: d.host || null,
-              visibility: d.visibility === "crew" ? "crew" : "public",
               start_at: start, end_at: fromLocal(d.end), place: clean(d.place, 120),
               lat: lat, lng: lng, details: clean(d.details, 500), link: url(d.link) };
+      if (d.visibility != null) row.visibility = d.visibility === "crew" ? "crew" : "public";
       base = (slug(d.title) + "-" + d.start.slice(0, 10)).slice(0, 70);
     } else if (d.kind === "crew") {
-      if (!clean(d.name)) return Promise.resolve({ ok: false, error: "Crew name is required." });
+      if (!clean(d.name)) return { error: "Crew name is required." };
       row = { name: clean(d.name, 60), area: clean(d.area, 80),
               color: /^#[0-9a-f]{6}$/i.test(d.color || "") ? d.color : "#ff3b3b",
               radius_km: Math.min(30, Math.max(0.5, Number(d.radius) || 3)), lat: lat, lng: lng,
@@ -118,13 +119,57 @@
               link: url(d.link), tags: tagList(d.tags) };
       base = slug(d.name);
     } else if (d.kind === "place") {
-      if (!clean(d.name)) return Promise.resolve({ ok: false, error: "Shop name is required." });
+      if (!clean(d.name)) return { error: "Shop name is required." };
       row = { name: clean(d.name, 60), category: d.category || "mechanic", tags: tagList(d.tags), area: clean(d.area, 80),
               lat: lat, lng: lng, phone: clean(d.phone, 40).replace(/[^\d+\-() ]/g, ""), hours: clean(d.hours, 80),
               link: url(d.link), details: clean(d.details, 500) };
       base = slug(d.name);
-    } else return Promise.resolve({ ok: false, error: "Unknown submission type." });
-    return insertWithUniqueId(tbl, row, base).then(function (r) { return { ok: true, live: r.status === "live" }; });
+    } else return { error: "Unknown submission type." };
+    return { row: row, base: base };
+  }
+
+  function submit(d) {
+    var b = buildRow(d);
+    if (b.error) return Promise.resolve({ ok: false, error: b.error });
+    if (d.kind === "meet" && b.row.visibility == null) b.row.visibility = "public";
+    return insertWithUniqueId(table(d.kind), b.row, b.base).then(function (r) { return { ok: true, live: r.status === "live" }; });
+  }
+
+  // Edit an existing post. The database only lets the poster or an admin do this.
+  function update(d) {
+    var tbl = table(d.kind);
+    if (!tbl) return Promise.resolve({ ok: false, error: "Unknown type." });
+    var b = buildRow(d);
+    if (b.error) return Promise.resolve({ ok: false, error: b.error });
+    return sb.from(tbl).update(b.row).eq("id", d.id).select("id").then(expectOne);
+  }
+  function remove(d) {
+    var tbl = table(d.kind);
+    if (!tbl) return Promise.resolve({ ok: false, error: "Unknown type." });
+    return sb.from(tbl).delete().eq("id", d.id).select("id").then(expectOne);
+  }
+
+  // One post, shaped for the edit form.
+  function get(d) {
+    var tbl = table(d.kind);
+    if (!tbl) return Promise.resolve({ ok: false, error: "Unknown type." });
+    return sb.from(tbl).select("*").eq("id", d.id).maybeSingle().then(function (r) {
+      if (r.error) throw r.error;
+      var x = r.data;
+      if (!x) return { ok: false, error: "Not found, or you can't edit it." };
+      var it = { kind: d.kind, id: x.id, status: x.status, coords: [x.lat, x.lng] };
+      if (d.kind === "meet") {
+        it.title = x.title; it.type = x.type; it.host = x.host_crew || ""; it.visibility = x.visibility;
+        it.start = toLocal(x.start_at); it.end = toLocal(x.end_at); it.place = x.place; it.details = x.details; it.link = x.link;
+      } else if (d.kind === "crew") {
+        it.name = x.name; it.area = x.area; it.color = x.color; it.radius = x.radius_km; it.logo = x.logo_url;
+        it.link = x.link; it.tags = (x.tags || []).join(", ");
+      } else {
+        it.name = x.name; it.category = x.category; it.area = x.area; it.tags = x.tags || []; it.hours = x.hours;
+        it.phone = x.phone; it.link = x.link; it.details = x.details;
+      }
+      return { ok: true, item: it };
+    });
   }
 
   function mine() {
@@ -154,22 +199,23 @@
   /* ---------- admin ---------- */
   function adminList() {
     var cols = {
-      meets: "id,title,type,host_crew,start_at,end_at,place,lat,lng,details,link,status,created_at,author:created_by(display_name)",
-      crews: "id,name,area,lat,lng,tags,status,created_at,author:created_by(display_name)",
-      places: "id,name,category,area,tags,lat,lng,status,created_at,author:created_by(display_name)"
+      meets: "id,title,type,host_crew,start_at,end_at,place,lat,lng,details,link,status,created_at,edited_at,author:created_by(display_name)",
+      crews: "id,name,area,lat,lng,tags,status,created_at,edited_at,author:created_by(display_name)",
+      places: "id,name,category,area,tags,lat,lng,status,created_at,edited_at,author:created_by(display_name)"
     };
     return Promise.all(Object.keys(cols).map(function (t) { return sb.from(t).select(cols[t]).order("created_at", { ascending: false }); }))
       .then(function (res) {
         res.forEach(function (r) { if (r.error) throw r.error; });
         var by = function (x) { return x.author && x.author.display_name ? x.author.display_name : "admin import"; };
         var at = function (x) { return toLocal(x.created_at).replace("T", " "); };
+        var ed = function (x) { return x.edited_at ? toLocal(x.edited_at).replace("T", " ") : ""; };
         var items = []
           .concat(res[0].data.map(function (m) { return { kind: "meet", id: m.id, label: m.title, where: m.place, start: toLocal(m.start_at), end: toLocal(m.end_at),
-            type: m.type, host: m.host_crew || "", details: m.details, link: m.link, by: by(m), submitted_at: at(m), lat: m.lat, lng: m.lng, status: m.status }; }))
+            type: m.type, host: m.host_crew || "", details: m.details, link: m.link, by: by(m), submitted_at: at(m), lat: m.lat, lng: m.lng, status: m.status, edited: ed(m) }; }))
           .concat(res[1].data.map(function (c) { return { kind: "crew", id: c.id, label: c.name, where: c.area, start: "", tags: (c.tags || []).join(", "),
-            by: by(c), submitted_at: at(c), lat: c.lat, lng: c.lng, status: c.status }; }))
+            by: by(c), submitted_at: at(c), lat: c.lat, lng: c.lng, status: c.status, edited: ed(c) }; }))
           .concat(res[2].data.map(function (p) { return { kind: "place", id: p.id, label: p.name, where: p.area, start: "", type: p.category, tags: (p.tags || []).join(", "),
-            by: by(p), submitted_at: at(p), lat: p.lat, lng: p.lng, status: p.status }; }));
+            by: by(p), submitted_at: at(p), lat: p.lat, lng: p.lng, status: p.status, edited: ed(p) }; }));
         items.sort(function (a, b) { return a.submitted_at < b.submitted_at ? 1 : -1; });
         return { ok: true, items: items };
       });
@@ -182,17 +228,14 @@
   function adminAction(d) {
     var tbl = table(d.kind);
     if (!tbl) return Promise.resolve({ ok: false, error: "Unknown type." });
-    if (d.action === "admin_delete") return sb.from(tbl).delete().eq("id", d.id).select("id").then(expectOne);
+    if (d.action === "admin_delete") return remove(d);
+    if (d.action === "admin_update") return update(d);
+    if (d.action === "admin_reviewed") return sb.from(tbl).update({ edited_at: null }).eq("id", d.id).select("id").then(expectOne);
     var status = { admin_approve: "live", admin_archive: "archived", admin_restore: "live" }[d.action];
-    if (status) return sb.from(tbl).update({ status: status }).eq("id", d.id).select("id").then(expectOne);
-    if (d.action === "admin_update") {
-      if (d.kind !== "meet") return Promise.resolve({ ok: false, error: "Only meets can be edited for now." });
-      var start = fromLocal(d.start);
-      if (!clean(d.title) || !start) return Promise.resolve({ ok: false, error: "Meet name and start time are required." });
-      return sb.from("meets").update({
-        title: clean(d.title, 80), type: d.type || "meet", host_crew: d.host || null, start_at: start, end_at: fromLocal(d.end),
-        place: clean(d.place, 120), lat: Number(d.lat), lng: Number(d.lng), details: clean(d.details, 500), link: url(d.link)
-      }).eq("id", d.id).select("id").then(expectOne);
+    if (status) {
+      var patch = { status: status };
+      if (status === "live") patch.edited_at = null;  // approving = the admin has seen the latest version
+      return sb.from(tbl).update(patch).eq("id", d.id).select("id").then(expectOne);
     }
     return Promise.resolve({ ok: false, error: "Unknown action." });
   }
@@ -204,6 +247,9 @@
       if (d.action === "whoami") return whoami();
       if (d.action === "mine") return mine();
       if (d.action === "submit") return submit(d);
+      if (d.action === "get") return get(d);
+      if (d.action === "update") return update(d);
+      if (d.action === "delete") return remove(d);
       if (d.action === "admin_list") return adminList();
       if (String(d.action || "").indexOf("admin_") === 0) return adminAction(d);
       return { ok: false, error: "Unknown action." };
