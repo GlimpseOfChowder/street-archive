@@ -376,16 +376,26 @@
       "BEGIN:VALARM", "TRIGGER:-PT" + (CFG.reminderMinutesBefore || 60) + "M", "ACTION:DISPLAY", "DESCRIPTION:" + e.title, "END:VALARM",
       "END:VEVENT", "END:VCALENDAR"
     ];
-    var blob = new Blob([lines.join("\r\n")], { type: "text/calendar" });
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = e.id + ".ics";
-    document.body.appendChild(a); a.click(); a.remove();
+    var ics = lines.join("\r\n");
+    var ua = navigator.userAgent || "";
+    var isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (isIOS) {
+      // iOS can't "download" a calendar file from a page. Opening a real .ics URL
+      // (served by our Google Sheet backend) brings up the native "Add to Calendar" sheet.
+      if (API && e._src === "sheet") window.location.href = API + "?ics=" + encodeURIComponent(e.id);
+      else window.location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
+    } else {
+      var blob = new Blob([ics], { type: "text/calendar" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = e.id + ".ics";
+      document.body.appendChild(a); a.click(); a.remove();
+    }
     var g = "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(e.title) +
       "&dates=" + icsDate(e.startD) + "/" + icsDate(e.endD) + "&location=" + encodeURIComponent((e.place || "") + " (" + e.coords.join(",") + ")") +
       "&details=" + encodeURIComponent(desc.replace(/\\n/g, "\n"));
     var el = document.createElement("div");
     el.className = "toast";
-    el.innerHTML = "<b>Calendar file downloaded</b><span class='muted'>Using Google Calendar? <a target='_blank' rel='noopener' style='color:var(--acc)' href='" + esc(g) + "'>Add it there instead</a></span>";
+    el.innerHTML = "<b>" + (isIOS ? "Opening your Calendar…" : "Calendar file downloaded") + "</b><span class='muted'>Using Google Calendar? <a target='_blank' rel='noopener' style='color:var(--acc)' href='" + esc(g) + "'>Add it there instead</a></span>";
     $("#toasts").appendChild(el); setTimeout(function () { el.remove(); }, 8000);
   }
 
@@ -440,7 +450,7 @@
     document.body.classList.toggle("sheet-full", state === "full");
   }
   function setPanel(open) {
-    if (mq.matches) { setSheet(open ? "half" : "peek"); return; }
+    if (mq.matches) { setSheet(open ? "full" : "peek"); return; }
     panel.classList.toggle("collapsed", !open);
     document.body.classList.toggle("panel-closed", !open);
   }
@@ -476,15 +486,10 @@
       if (!dragging) return;
       dragging = false; panel.classList.remove("dragging");
       if (!moved) { panel.style.transform = ""; return; }
-      var vis = startVis - (e.clientY - startY);
-      var states = ["peek", "half", "full"];
-      var target;
-      if (Math.abs(vel) > 0.5) { // flick
-        var i = states.indexOf(sheet) + (vel < 0 ? 1 : -1);
-        target = states[Math.max(0, Math.min(2, i))];
-      } else {
-        target = states.reduce(function (best, s) { return Math.abs(sheetPx(s) - vis) < Math.abs(sheetPx(best) - vis) ? s : best; }, "peek");
-      }
+      // One swipe is enough: up opens fully, down collapses.
+      var dy = e.clientY - startY, target;
+      if (Math.abs(vel) > 0.3 || Math.abs(dy) > 40) target = dy < 0 ? "full" : "peek";
+      else target = sheet;
       setSheet(target);
       suppressClick = true; setTimeout(function () { suppressClick = false; }, 50);
     }
@@ -494,7 +499,7 @@
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
     $(".tabs").addEventListener("click", function (e) { if (suppressClick) { e.stopPropagation(); e.preventDefault(); } }, true);
-    $("#sheet-handle").addEventListener("click", function () { if (!suppressClick) setSheet(sheet === "peek" ? "half" : "peek"); });
+    $("#sheet-handle").addEventListener("click", function () { if (!suppressClick) setSheet(sheet === "peek" ? "full" : "peek"); });
   })();
 
   $$(".tab").forEach(function (b) {
@@ -503,7 +508,7 @@
       $("#tab-meets").hidden = b.dataset.tab !== "meets";
       $("#tab-crews").hidden = b.dataset.tab !== "crews";
       if (b.dataset.tab === "meets") markSeen();
-      if (mq.matches && sheet === "peek") setSheet("half");
+      if (mq.matches && sheet === "peek") setSheet("full");
     };
   });
 
