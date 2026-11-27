@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Covered+By+Your+Grace&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=20261128k">
+  <link rel="stylesheet" href="styles.css?v=20261128l">
 </head>
 <body>
 
@@ -55,7 +55,7 @@
           <div id="acct-crews" hidden><h5>My crews</h5><ul id="acct-crew-list" class="acct-posts"></ul></div>
           <h5>My posts</h5>
           <ul id="acct-posts" class="acct-posts"></ul>
-          <div class="acct-actions"><button id="acct-admin" class="btn sm btn-accent" hidden>Admin panel</button><button id="acct-signout" class="btn sm">Sign out</button></div>
+          <div class="acct-actions"><button id="acct-profile" class="btn sm">My profile</button><button id="acct-admin" class="btn sm btn-accent" hidden>Admin panel</button><button id="acct-signout" class="btn sm">Sign out</button></div>
         </div>
       </div>
     </div>
@@ -236,6 +236,45 @@
   </div>
 
   <!-- ===== Admin panel ===== -->
+  <div id="profile-panel" class="modal" hidden>
+    <div class="modal-card admin-card" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+      <button class="modal-x" data-profile-close aria-label="Close">×</button>
+      <h5 id="profile-title" class="prof-kicker">Profile</h5>
+      <div id="profile-body"></div>
+    </div>
+  </div>
+
+  <div id="car-panel" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="car-title">
+      <button class="modal-x" data-car-close aria-label="Close">×</button>
+      <h2 id="car-title">Add a car</h2>
+      <form id="car-form" class="car-form">
+        <div class="row">
+          <label>Year<input name="year" type="number" inputmode="numeric" min="1950" max="2030" placeholder="1998"></label>
+          <label>Make<input name="make" maxlength="40" placeholder="Honda" required></label>
+        </div>
+        <div class="row">
+          <label>Model<input name="model" maxlength="60" placeholder="Civic EK9"></label>
+          <label>Nickname <span class="muted">(optional)</span><input name="nickname" maxlength="40" placeholder="Type R"></label>
+        </div>
+        <label>It's my…
+          <select name="kind">
+            <option value="daily">Daily</option>
+            <option value="project">Project</option>
+            <option value="track">Track car</option>
+            <option value="show">Show car</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label>Mods / build notes <span class="muted">(optional)</span><textarea name="mods" rows="3" maxlength="500" placeholder="Coilovers, 15&quot; TE37s, intake, tune…"></textarea></label>
+        <label>Photo <span class="muted">(optional)</span><input id="car-photo" type="file" accept="image/*"></label>
+        <div id="car-preview" class="car-preview"></div>
+        <p id="car-photo-note" class="muted small"></p>
+        <div class="modal-actions"><button type="button" class="btn" data-car-close>Cancel</button><button id="car-save" type="submit" class="btn btn-accent">Save</button></div>
+      </form>
+    </div>
+  </div>
+
   <div id="crew-panel" class="modal" hidden>
     <div class="modal-card admin-card" role="dialog" aria-modal="true" aria-labelledby="crew-panel-title">
       <button class="modal-x" data-crew-close aria-label="Close">×</button>
@@ -284,10 +323,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://unpkg.com/@supabase/supabase-js@2.119.2/dist/umd/supabase.js"></script>
-  <script src="js/config.js?v=20261128k"></script>
-  <script src="js/backend.js?v=20261128k"></script>
-  <script src="data/crews.js?v=20261128k"></script>
-  <script src="data/events.js?v=20261128k"></script>
-  <script src="script.js?v=20261128k"></script>
+  <script src="js/config.js?v=20261128l"></script>
+  <script src="js/backend.js?v=20261128l"></script>
+  <script src="data/crews.js?v=20261128l"></script>
+  <script src="data/events.js?v=20261128l"></script>
+  <script src="script.js?v=20261128l"></script>
 </body>
 </html>
