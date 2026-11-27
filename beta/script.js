@@ -726,16 +726,45 @@
     sBox.innerHTML = "";
     items.forEach(function (it) {
       var b = document.createElement("button");
-      b.innerHTML = "<span>" + esc(it.label) + (it.sub ? " <span class='muted'>· " + esc(it.sub) + "</span>" : "") + "</span><small>" + esc(it.kind) + "</small>";
+      b.innerHTML = "<span class='sr-main'><span class='sr-label'>" + esc(it.label) + "</span>" + (it.sub ? "<span class='sr-sub'>" + esc(it.sub) + "</span>" : "") + "</span><small>" + esc(it.kind) + "</small>";
       b.onclick = function () { sBox.hidden = true; if (it.kind !== "Place" || !/^Search places/.test(it.label)) sInput.blur(); it.go(); };
       sBox.appendChild(b);
     });
     sBox.hidden = false;
   }
-  // Crews & meets filter as you type. Place search hits OpenStreetMap Nominatim,
-  // whose usage policy (operations.osmfoundation.org/policies/nominatim/) forbids
-  // search-as-you-type and allows max 1 request/second for the whole site —
-  // so places are only looked up when the user presses Enter / taps the row.
+  // Place suggestions as you type come from Photon (photon.komoot.io): free,
+  // OpenStreetMap data, built for search-as-you-type. We wait until the user
+  // pauses typing, cancel stale requests and cache answers to stay "fair use".
+  // Nominatim (no search-as-you-type allowed) is only the Enter-key fallback.
+  var PH_BBOX = "116.9,4.5,126.7,21.3";
+  var photonCache = {}, photonCtl = null;
+  function photon(q, cb) {
+    var key = q.toLowerCase();
+    if (photonCache[key]) { cb(photonCache[key]); return; }
+    if (photonCtl) photonCtl.abort();
+    photonCtl = window.AbortController ? new AbortController() : null;
+    var c = map.getCenter();
+    fetch("https://photon.komoot.io/api/?limit=6&lang=en&bbox=" + PH_BBOX + "&lat=" + c.lat.toFixed(3) + "&lon=" + c.lng.toFixed(3) +
+          "&q=" + encodeURIComponent(q), photonCtl ? { signal: photonCtl.signal } : {})
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (j) {
+        var seen = {};
+        var out = (j.features || []).map(function (f) {
+          var pr = f.properties || {}, xy = (f.geometry || {}).coordinates || [];
+          var name = pr.name || [pr.housenumber, pr.street].filter(Boolean).join(" ") || pr.city || "";
+          var sub = [];
+          [pr.name ? pr.street : "", pr.district || pr.locality, pr.city, pr.state].forEach(function (x) { if (x && x !== name && sub.indexOf(x) < 0) sub.push(x); });
+          return { name: name, sub: sub.slice(0, 3).join(", "), lat: +xy[1], lng: +xy[0], area: pr.osm_key === "place" || pr.osm_key === "boundary" };
+        }).filter(function (x) {
+          var k = x.name + "|" + x.sub;
+          if (!x.name || !isFinite(x.lat) || seen[k]) return false;
+          seen[k] = 1; return true;
+        });
+        photonCache[key] = out; cb(out);
+      })
+      .catch(function (e) { if (!e || e.name !== "AbortError") cb(null); });
+  }
+  function debounce(fn, ms) { var t; return function () { var a = arguments; clearTimeout(t); t = setTimeout(function () { fn.apply(null, a); }, ms); }; }
   var lastGeo = 0;
   function placeRow(q) {
     return { kind: "Place", label: "Search places for “" + q + "”", sub: "", go: function () { searchPlaces(q); } };
@@ -761,10 +790,21 @@
         sInput.focus();
     });
   }
+  var suggestPlacesMain = debounce(function (q) {
+    photon(q, function (res) {
+      if (sInput.value.trim() !== q) return;                 // user kept typing
+      var local = searchItems(q);
+      if (!res) { showResults(local.concat([placeRow(q)])); return; }  // Photon down: Enter → Nominatim
+      showResults(local.concat(res.map(function (p) {
+        return { kind: "Place", label: p.name, sub: p.sub, go: function () { map.flyTo([p.lat, p.lng], p.area ? 13 : 16); } };
+      })));
+    });
+  }, 350);
   sInput.addEventListener("input", function () {
     var q = sInput.value.trim();
     if (q.length < 2) { sBox.hidden = true; return; }
     showResults(searchItems(q).concat([placeRow(q)]));
+    if (q.length >= 3) suggestPlacesMain(q);
   });
   sInput.addEventListener("keydown", function (e) {
     var btns = $$("button", sBox);
@@ -1196,6 +1236,13 @@
       return;
     }
     $("#pick-msg").textContent = "Searching…";
+    photon(q, function (pres) {
+      if (pres && pres.length) { showPickResults(pres); $("#pick-msg").textContent = "Pick a result, then fine-tune the pin"; return; }
+      nominatimPick(q);
+    });
+  }
+  function nominatimPick(q) {
+    var box = $("#pick-results");
     geocode(q, function (res) {
       if (res === null) { $("#pick-msg").textContent = "Search is busy — try again in a second."; return; }
       if (!res.length) { box.hidden = true; $("#pick-msg").textContent = "Nothing found. Try a street, barangay, mall or landmark nearby, then tap the map."; return; }
@@ -1211,6 +1258,30 @@
       $("#pick-msg").textContent = "Pick a result, then fine-tune the pin";
     });
   }
+  function showPickResults(res) {
+    var box = $("#pick-results");
+    box.innerHTML = "";
+    res.forEach(function (p) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.innerHTML = "<b>" + esc(p.name) + "</b><span>" + esc(p.sub) + "</span>";
+      b.onclick = function () { box.hidden = true; setPin([p.lat, p.lng], true); };
+      box.appendChild(b);
+    });
+    box.hidden = !res.length;
+  }
+  var suggestPick = debounce(function (q) {
+    photon(q, function (res) {
+      if ($("#pick-q").value.trim() !== q || !res) return;
+      showPickResults(res);
+      $("#pick-msg").textContent = res.length ? "Pick a result, then fine-tune the pin" : "No matches yet — keep typing, or try a landmark nearby";
+    });
+  }, 350);
+  $("#pick-q").addEventListener("input", function () {
+    var q = this.value.trim();
+    if (q.length < 3 || parseCoords(q) || /^https?:|goo\.gl/.test(q)) { if (q.length < 3) $("#pick-results").hidden = true; return; }
+    suggestPick(q);
+  });
   $("#pick-go").onclick = pickSearch;
   $("#pick-q").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); pickSearch(); } });
   $("#pick-here").onclick = function () {
