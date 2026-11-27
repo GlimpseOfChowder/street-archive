@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Covered+By+Your+Grace&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=20261128f">
+  <link rel="stylesheet" href="styles.css?v=20261128g">
 </head>
 <body>
 
@@ -52,6 +52,7 @@
             <p>Your session expired — sign in again to post or manage.</p>
             <div id="gsi-reauth-btn" class="gsi-slot"></div>
           </div>
+          <div id="acct-crews" hidden><h5>My crews</h5><ul id="acct-crew-list" class="acct-posts"></ul></div>
           <h5>My posts</h5>
           <ul id="acct-posts" class="acct-posts"></ul>
           <div class="acct-actions"><button id="acct-admin" class="btn sm btn-accent" hidden>Admin panel</button><button id="acct-signout" class="btn sm">Sign out</button></div>
@@ -159,6 +160,13 @@
             </label>
             <label>Host crew<select name="host" id="host-select"></select></label>
           </div>
+          <label>Who can see it
+            <select name="visibility">
+              <option value="public">Everyone</option>
+              <option value="crew">Crew members only</option>
+            </select>
+            <span id="vis-hint" class="muted small"></span>
+          </label>
           <div class="row dt-row">
             <label>Start date<input name="start_date" type="date" class="dt"></label>
             <label>Start time<input name="start_time" type="time" step="900" class="dt" value="21:00"></label>
@@ -228,6 +236,14 @@
   </div>
 
   <!-- ===== Admin panel ===== -->
+  <div id="crew-panel" class="modal" hidden>
+    <div class="modal-card admin-card" role="dialog" aria-modal="true" aria-labelledby="crew-panel-title">
+      <button class="modal-x" data-crew-close aria-label="Close">×</button>
+      <h2 id="crew-panel-title">Crew</h2>
+      <div id="crew-panel-body"></div>
+    </div>
+  </div>
+
   <div id="admin-panel" class="modal" hidden>
     <div class="modal-card admin-card" role="dialog" aria-modal="true" aria-labelledby="admin-title">
       <button class="modal-x" data-admin-close aria-label="Close">×</button>
@@ -237,6 +253,7 @@
         <button class="chip" data-t="flagged">Reported <b>0</b></button>
         <button class="chip" data-t="live">Live <b>0</b></button>
         <button class="chip" data-t="archived">Archived <b>0</b></button>
+        <button class="chip" data-t="requests">Join requests <b>0</b></button>
       </div>
       <div class="chips admin-kinds" id="admin-kinds">
         <button class="chip active" data-k="all">All <b>0</b></button>
@@ -267,10 +284,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://unpkg.com/@supabase/supabase-js@2.119.2/dist/umd/supabase.js"></script>
-  <script src="js/config.js?v=20261128f"></script>
-  <script src="js/backend.js?v=20261128f"></script>
-  <script src="data/crews.js?v=20261128f"></script>
-  <script src="data/events.js?v=20261128f"></script>
-  <script src="script.js?v=20261128f"></script>
+  <script src="js/config.js?v=20261128g"></script>
+  <script src="js/backend.js?v=20261128g"></script>
+  <script src="data/crews.js?v=20261128g"></script>
+  <script src="data/events.js?v=20261128g"></script>
+  <script src="script.js?v=20261128g"></script>
 </body>
 </html>
