@@ -302,6 +302,16 @@
   var PLACE_TAGS = ["JDM", "Euro", "American", "Korean", "Diesel", "Tuning / ECU", "Engine", "Transmission", "Suspension",
     "Brakes", "Bodywork / Paint", "Electrical", "Aircon", "Exhaust", "Wheels / Alignment", "Ceramic coating", "PPF",
     "Interior", "Motorcycle", "24/7"];
+  // Which specialties make sense for each type of place (the submit form only shows these).
+  var TAGS_BY_CAT = {
+    mechanic:  ["JDM", "Euro", "American", "Korean", "Diesel", "Tuning / ECU", "Engine", "Transmission", "Suspension",
+                "Brakes", "Bodywork / Paint", "Electrical", "Aircon", "Exhaust", "Wheels / Alignment", "Motorcycle", "24/7"],
+    carwash:   ["Ceramic coating"],
+    detailing: ["Ceramic coating", "PPF", "Interior", "Bodywork / Paint", "Motorcycle"],
+    tint:      ["PPF", "Ceramic coating", "Motorcycle"],
+    tires:     ["Wheels / Alignment", "Brakes", "Suspension", "Motorcycle", "24/7"],
+    parts:     ["JDM", "Euro", "American", "Korean", "Diesel", "Engine", "Suspension", "Exhaust", "Brakes", "Electrical", "Motorcycle"]
+  };
   function catOf(p) { return PLACE_CATS[p.category] || PLACE_CATS.mechanic; }
   function placeSvg(p, size) { return "<svg viewBox='0 0 24 24' width='" + size + "' height='" + size + "'><path d='" + catOf(p).icon + "'/></svg>"; }
   var placeById = {};
@@ -591,6 +601,47 @@
     window.addEventListener("pointercancel", up);
     $(".tabs").addEventListener("click", function (e) { if (suppressClick) { e.stopPropagation(); e.preventDefault(); } }, true);
     $("#sheet-handle").addEventListener("click", function () { if (!suppressClick) setSheet(sheet === "peek" ? "full" : "peek"); });
+
+    // Swipe the list itself: pulling down while it's scrolled to the top
+    // (or swiping up while peeking) moves the sheet instead of scrolling,
+    // so the phone's pull-to-refresh never kicks in.
+    var tb = null, ty0 = 0, tx0 = 0, tyLast = 0, ttLast = 0, tvel = 0, tmode = null;
+    $$(".tab-body").forEach(function (body) {
+      body.addEventListener("touchstart", function (e) {
+        if (!mq.matches || e.touches.length > 1) { tmode = "scroll"; return; }
+        tb = body; tmode = null; tvel = 0;
+        ty0 = tyLast = e.touches[0].clientY; tx0 = e.touches[0].clientX; ttLast = Date.now();
+        startVis = sheetPx(sheet);
+      }, { passive: true });
+      body.addEventListener("touchmove", function (e) {
+        if (tmode === "scroll" || tb !== body) return;
+        var y = e.touches[0].clientY, dy = y - ty0, dx = e.touches[0].clientX - tx0;
+        if (tmode === null) {
+          if (Math.abs(dy) < 3 && Math.abs(dx) < 3) return;
+          var atTop = body.scrollTop <= 0;
+          if (Math.abs(dx) > Math.abs(dy)) tmode = "scroll";                   // sideways chip scrolling
+          else if (sheet !== "full" || (dy > 0 && atTop)) tmode = e.cancelable ? "sheet" : "scroll";
+          else tmode = "scroll";
+          if (tmode === "sheet") panel.classList.add("dragging");
+        }
+        if (tmode !== "sheet") return;
+        e.preventDefault();
+        var now = Date.now();
+        tvel = (y - tyLast) / Math.max(1, now - ttLast); tyLast = y; ttLast = now;
+        var vis = Math.min(sheetPx("full"), Math.max(60, startVis - dy));
+        panel.style.transform = "translateY(" + (panel.offsetHeight - vis) + "px)";
+      }, { passive: false });
+      function tend() {
+        if (tmode === "sheet") {
+          panel.classList.remove("dragging");
+          var dy = tyLast - ty0;
+          setSheet((Math.abs(tvel) > 0.3 || Math.abs(dy) > 50) ? (dy < 0 ? "full" : "peek") : sheet);
+        }
+        tmode = null; tb = null;
+      }
+      body.addEventListener("touchend", tend);
+      body.addEventListener("touchcancel", tend);
+    });
   })();
 
   $$(".tab").forEach(function (b) {
@@ -688,19 +739,26 @@
   function placeRow(q) {
     return { kind: "Place", label: "Search places for “" + q + "”", sub: "", go: function () { searchPlaces(q); } };
   }
-  function searchPlaces(q) {
-    if (Date.now() - lastGeo < 1100) return;
+  function geocode(q, cb) {
+    if (Date.now() - lastGeo < 1100) { cb(null); return; }
     lastGeo = Date.now();
-    fetch("https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=ph&q=" + encodeURIComponent(q))
+    var b = map.getBounds(); // prefer results near what's on screen
+    fetch("https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=ph&viewbox=" +
+          [b.getWest(), b.getNorth(), b.getEast(), b.getSouth()].map(function (n) { return n.toFixed(4); }).join(",") +
+          "&q=" + encodeURIComponent(q))
       .then(function (r) { return r.json(); })
-      .then(function (res) {
+      .then(cb).catch(function () { cb([]); });
+  }
+  function searchPlaces(q) {
+    geocode(q, function (res) {
+        if (res === null) return;
         if (!res.length) { toast("No places found", "Try a city or landmark name."); return; }
         if (res.length === 1) { map.flyTo([+res[0].lat, +res[0].lon], 14); return; }
         showResults(res.map(function (p) {
           return { kind: "Place", label: p.display_name.split(",").slice(0, 2).join(","), sub: "", go: function () { map.flyTo([+p.lat, +p.lon], 14); } };
         }));
         sInput.focus();
-      }).catch(function () { toast("Place search unavailable", "Try again in a moment."); });
+    });
   }
   sInput.addEventListener("input", function () {
     var q = sInput.value.trim();
@@ -933,7 +991,7 @@
   function openModal() { if (editing) { editing = null; form.reset(); picked = null; $("#pick-coords").textContent = "No location yet"; } setFormMode(false); modal.hidden = false; updateGate(); resetDates(); }
   function closeModal() {
     if (editing && adminDirty) { setTimeout(function () { location.reload(); }, 300); }
-    modal.hidden = true; modal.classList.remove("picking"); $("#pick-hint").hidden = true;
+    modal.hidden = true; modal.classList.remove("picking"); $("#pick-hint").hidden = true; map.off("click", onPick);
     map.getContainer().classList.remove("picking-map");
     if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; }
   }
@@ -992,8 +1050,8 @@
     set("place", m.place); set("details", m.details); set("link", m.link);
     $$("#submit-form input[type=date]").forEach(function (d) { d.min = ""; }); // past/ongoing meets are editable
     picked = (m.coords && isFinite(m.coords[0])) ? [m.coords[0], m.coords[1]] : null;
+    if (picked) setPin(picked);
     $("#pick-coords").textContent = picked ? picked.join(", ") + " (tap 📍 to move)" : "No location yet";
-    if (picked) { if (pickMarker) pickMarker.setLatLng(picked); else pickMarker = L.marker(picked).addTo(map); }
     if (repost) {
       $("#modal-title").textContent = "Repost meet";
       $("#submit-go").textContent = "Repost";
@@ -1016,30 +1074,96 @@
     openEdit(b.dataset.adminEdit, b.dataset.repost === "1");
   });
 
+  // Picking a spot: tap the map, drag the pin, search a place/address, paste
+  // coordinates or a Google Maps link, or use the phone's GPS.
+  var pickBefore = null;
+  function setPin(ll, fly) {
+    picked = [+(+ll[0]).toFixed(6), +(+ll[1]).toFixed(6)];
+    if (pickMarker) pickMarker.setLatLng(picked);
+    else {
+      pickMarker = L.marker(picked, { draggable: true }).addTo(map);
+      pickMarker.on("dragend", function () { var p = pickMarker.getLatLng(); setPin([p.lat, p.lng]); });
+    }
+    $("#pick-coords").textContent = picked.join(", ");
+    if (fly) map.flyTo(picked, Math.max(map.getZoom(), 17));
+    $("#pick-done").hidden = false;
+    $("#pick-msg").textContent = "Pin set — drag it or tap the map to adjust";
+  }
   function startPick() {
+    pickBefore = picked ? picked.slice() : null;
     modal.classList.add("picking"); $("#pick-hint").hidden = false;
+    $("#pick-done").hidden = !picked; $("#pick-results").hidden = true; $("#pick-q").value = "";
+    $("#pick-msg").textContent = picked ? "Drag the pin or tap the map to move it" : "Search above, or tap the map to drop the pin";
     map.getContainer().classList.add("picking-map");
-    map.once("click", onPick);
+    map.on("click", onPick);
   }
-  function onPick(e) {
-      map.closePopup();
-      picked = [+e.latlng.lat.toFixed(6), +e.latlng.lng.toFixed(6)];
-      if (pickMarker) pickMarker.setLatLng(picked);
-      else pickMarker = L.marker(picked).addTo(map);
-      $("#pick-coords").textContent = picked.join(", ");
-      endPick();
-  }
+  function onPick(e) { map.closePopup(); setPin([e.latlng.lat, e.latlng.lng]); }
   function endPick() {
+    map.off("click", onPick);
     modal.classList.remove("picking"); $("#pick-hint").hidden = true;
     map.getContainer().classList.remove("picking-map");
   }
+  // Coordinates or a Google Maps URL pasted in the box.
+  function parseCoords(q) {
+    var m = q.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || q.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
+            q.match(/(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/);
+    if (!m) return null;
+    var lat = +m[1], lng = +m[2];
+    return (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) ? [lat, lng] : null;
+  }
+  function pickSearch() {
+    var q = $("#pick-q").value.trim(), box = $("#pick-results");
+    if (q.length < 2) return;
+    var c = parseCoords(q);
+    if (c) { box.hidden = true; setPin(c, true); return; }
+    if (/goo\.gl|maps\.app/.test(q)) {
+      $("#pick-msg").textContent = "Short Google links can't be read. In Google Maps, long-press the spot and copy the numbers (e.g. 14.5547, 121.0244) instead.";
+      return;
+    }
+    $("#pick-msg").textContent = "Searching…";
+    geocode(q, function (res) {
+      if (res === null) { $("#pick-msg").textContent = "Search is busy — try again in a second."; return; }
+      if (!res.length) { box.hidden = true; $("#pick-msg").textContent = "Nothing found. Try a street, barangay, mall or landmark nearby, then tap the map."; return; }
+      box.innerHTML = "";
+      res.forEach(function (p) {
+        var parts = p.display_name.split(","), b = document.createElement("button");
+        b.type = "button";
+        b.innerHTML = "<b>" + esc(parts[0]) + "</b><span>" + esc(parts.slice(1, 4).join(",").trim()) + "</span>";
+        b.onclick = function () { box.hidden = true; setPin([+p.lat, +p.lon], true); };
+        box.appendChild(b);
+      });
+      box.hidden = false;
+      $("#pick-msg").textContent = "Pick a result, then fine-tune the pin";
+    });
+  }
+  $("#pick-go").onclick = pickSearch;
+  $("#pick-q").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); pickSearch(); } });
+  $("#pick-here").onclick = function () {
+    if (!navigator.geolocation) return;
+    $("#pick-msg").textContent = "Finding you…";
+    navigator.geolocation.getCurrentPosition(function (pos) { setPin([pos.coords.latitude, pos.coords.longitude], true); },
+      function () { $("#pick-msg").textContent = "Couldn't get your location — allow location access, or search instead."; },
+      { enableHighAccuracy: true, timeout: 10000 });
+  };
   $("#btn-pick").onclick = startPick;
-  $("#pick-cancel").onclick = function () { map.off("click", onPick); endPick(); };
+  $("#pick-done").onclick = endPick;
+  $("#pick-cancel").onclick = function () {
+    if (pickBefore) setPin(pickBefore);
+    else { picked = null; if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; } $("#pick-coords").textContent = "No location yet"; }
+    endPick();
+  };
 
   function slug(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "entry"; }
   $("#pcategory").innerHTML = Object.keys(PLACE_CATS).map(function (k) { return "<option value='" + k + "'>" + esc(PLACE_CATS[k].label) + "</option>"; }).join("");
-  $("#ptag-chips").innerHTML = PLACE_TAGS.map(function (t) {
-    return "<label class='chip chip-check'><input type='checkbox' name='ptag' value='" + esc(t) + "'><span>" + esc(t) + "</span></label>"; }).join("");
+  function renderTagChips() {
+    var cat = $("#pcategory").value, keep = {};
+    $$("#ptag-chips input:checked").forEach(function (i) { keep[i.value] = 1; });
+    var tags = TAGS_BY_CAT[cat] || PLACE_TAGS;
+    $("#ptag-chips").innerHTML = tags.map(function (t) {
+      return "<label class='chip chip-check'><input type='checkbox' name='ptag' value='" + esc(t) + "'" + (keep[t] ? " checked" : "") + "><span>" + esc(t) + "</span></label>"; }).join("");
+  }
+  $("#pcategory").addEventListener("change", renderTagChips);
+  renderTagChips();
 
   /* ---------------- date / time pickers ---------------- */
   function pad2(n) { return String(n).padStart(2, "0"); }
