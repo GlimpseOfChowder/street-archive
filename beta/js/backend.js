@@ -50,6 +50,7 @@
     var m = (err && (err.message || err.details)) || "Something went wrong.";
     if (/violates check constraint/i.test(m)) return "Some details aren't valid — check the name, times and location.";
     if (/JWT|not authenticated|permission denied/i.test(m)) return "Please sign in again.";
+    if (/reports_pkey/.test(m)) return "You already reported this — thanks!";
     return m;
   }
   function uid() { return session && session.user ? session.user.id : null; }
@@ -178,13 +179,23 @@
       return sb.from(tbl).select("id," + label + ",status,created_at").eq("created_by", me).then(function (r) {
         if (r.error) throw r.error;
         return r.data.map(function (x) {
-          return { kind: kind, id: x.id, label: x[label], approved: x.status === "live", archived: x.status === "archived", submitted_at: x.created_at };
+          return { kind: kind, id: x.id, label: x[label], approved: x.status === "live", archived: x.status === "archived",
+                   flagged: x.status === "flagged", submitted_at: x.created_at };
         });
       });
     };
     return Promise.all([q("meets", "title", "meet"), q("crews", "name", "crew"), q("places", "name", "place")]).then(function (a) {
       var items = a[0].concat(a[1], a[2]).sort(function (x, y) { return x.submitted_at < y.submitted_at ? 1 : -1; }).slice(0, 50);
       return { ok: true, items: items };
+    });
+  }
+
+  // Anyone signed in can report a live post; 3 reports hide it until the admin decides.
+  function report(d) {
+    if (!table(d.kind)) return Promise.resolve({ ok: false, error: "Unknown type." });
+    return sb.from("reports").insert({ kind: d.kind, item_id: d.id, reason: clean(d.reason, 200) }).then(function (r) {
+      if (r.error) throw r.error;
+      return { ok: true };
     });
   }
 
@@ -203,9 +214,13 @@
       crews: "id,name,area,lat,lng,tags,status,created_at,edited_at,author:created_by(display_name)",
       places: "id,name,category,area,tags,lat,lng,status,created_at,edited_at,author:created_by(display_name)"
     };
-    return Promise.all(Object.keys(cols).map(function (t) { return sb.from(t).select(cols[t]).order("created_at", { ascending: false }); }))
+    var qs = Object.keys(cols).map(function (t) { return sb.from(t).select(cols[t]).order("created_at", { ascending: false }); });
+    qs.push(sb.from("reports").select("kind,item_id,reason,created_at"));
+    return Promise.all(qs)
       .then(function (res) {
         res.forEach(function (r) { if (r.error) throw r.error; });
+        var reps = {};
+        res[3].data.forEach(function (r) { var k = r.kind + ":" + r.item_id; (reps[k] = reps[k] || []).push(r.reason || "no reason"); });
         var by = function (x) { return x.author && x.author.display_name ? x.author.display_name : "admin import"; };
         var at = function (x) { return toLocal(x.created_at).replace("T", " "); };
         var ed = function (x) { return x.edited_at ? toLocal(x.edited_at).replace("T", " ") : ""; };
@@ -216,6 +231,7 @@
             by: by(c), submitted_at: at(c), lat: c.lat, lng: c.lng, status: c.status, edited: ed(c) }; }))
           .concat(res[2].data.map(function (p) { return { kind: "place", id: p.id, label: p.name, where: p.area, start: "", type: p.category, tags: (p.tags || []).join(", "),
             by: by(p), submitted_at: at(p), lat: p.lat, lng: p.lng, status: p.status, edited: ed(p) }; }));
+        items.forEach(function (i) { i.reports = reps[i.kind + ":" + i.id] || []; });
         items.sort(function (a, b) { return a.submitted_at < b.submitted_at ? 1 : -1; });
         return { ok: true, items: items };
       });
@@ -250,6 +266,7 @@
       if (d.action === "get") return get(d);
       if (d.action === "update") return update(d);
       if (d.action === "delete") return remove(d);
+      if (d.action === "report") return report(d);
       if (d.action === "admin_list") return adminList();
       if (String(d.action || "").indexOf("admin_") === 0) return adminAction(d);
       return { ok: false, error: "Unknown action." };
