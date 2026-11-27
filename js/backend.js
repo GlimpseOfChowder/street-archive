@@ -288,6 +288,19 @@
     });
   }
 
+  // Site admin: how many things are waiting (head-only count queries — tiny).
+  function adminCounts() {
+    var c = function (tbl, col, val) { return sb.from(tbl).select(col === "status" && tbl === "crew_members" ? "crew_id" : "id", { count: "exact", head: true }).eq(col, val); };
+    var qs = [c("meets", "status", "pending"), c("crews", "status", "pending"), c("places", "status", "pending"),
+              c("meets", "status", "flagged"), c("crews", "status", "flagged"), c("places", "status", "flagged"),
+              c("crew_members", "status", "pending")];
+    return Promise.all(qs).then(function (res) {
+      res.forEach(function (r) { if (r.error) throw r.error; });
+      var n = res.map(function (r) { return r.count || 0; });
+      return { ok: true, pending: n[0] + n[1] + n[2], reported: n[3] + n[4] + n[5], requests: n[6] };
+    });
+  }
+
   function whoami() {
     return sb.from("profiles").select("is_admin,is_trusted,is_banned").eq("id", uid()).maybeSingle().then(function (r) {
       if (r.error) throw r.error;
@@ -362,6 +375,7 @@
       if (d.action === "crew_panel") return crewPanel(d);
       if (d.action === "member") return memberAction(d);
       if (d.action === "join_requests") return joinRequests();
+      if (d.action === "admin_counts") return adminCounts();
       if (d.action === "admin_list") return adminList();
       if (String(d.action || "").indexOf("admin_") === 0) return adminAction(d);
       return { ok: false, error: "Unknown action." };
