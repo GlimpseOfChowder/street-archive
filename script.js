@@ -760,6 +760,7 @@
     if (!ROLE.admin) return "";
     if (item._src !== "sheet") return "<div class='admin-row muted'>Admin: this " + k + " is in the site's data files — edit it on GitHub.</div>";
     return "<div class='admin-row'><span>Admin</span>" +
+      (k === "meet" ? "<button class='btn sm btn-accent' data-admin-edit='" + esc(item.id) + "'>Edit</button>" : "") +
       "<button class='btn sm' data-admin-act='admin_archive' data-kind='" + k + "' data-id='" + esc(item.id) + "' data-label='" + esc(item.name || item.title) + "'>Archive</button>" +
       "<button class='btn sm btn-danger' data-admin-act='admin_delete' data-kind='" + k + "' data-id='" + esc(item.id) + "' data-label='" + esc(item.name || item.title) + "'>Delete</button></div>";
   }
@@ -800,13 +801,16 @@
       if (i.status === "live") btns.push(["admin_archive", "Archive", ""]);
       if (i.status === "archived") btns.push(["admin_restore", "Restore", ""]);
       btns.push(["admin_delete", "Delete", "btn-danger"]);
+      var editBtn = i.kind !== "meet" ? "" : i.status === "archived"
+        ? "<button class='btn sm btn-accent' data-admin-edit='" + esc(i.id) + "' data-repost='1' title='Change the date and put it back on the map'>Repost…</button>"
+        : "<button class='btn sm' data-admin-edit='" + esc(i.id) + "'>Edit</button>";
       var when = i.kind === "meet" && i.start ? (function () { var d = parseDate(i.start); return d ? fmtFull.format(d) : i.start; })() : "";
       return "<li class='admin-item'>" +
         "<div class='ai-main'><span class='tag tag-type'>" + esc(i.kind) + "</span><b>" + esc(i.label) + "</b>" +
         "<div class='muted'>" + esc([when, i.where].filter(Boolean).join(" · ")) + "</div>" +
         "<div class='muted small'>by " + esc(i.by || "—") + " · " + esc(i.submitted_at) +
         (i.lat !== "" && i.lat != null ? " · <a href='https://www.google.com/maps?q=" + esc(i.lat) + "," + esc(i.lng) + "' target='_blank' rel='noopener'>map</a>" : "") + "</div></div>" +
-        "<div class='ai-btns'>" + btns.map(function (b) {
+        "<div class='ai-btns'>" + editBtn + btns.map(function (b) {
           return "<button class='btn sm " + b[2] + "' data-admin-act='" + b[0] + "' data-kind='" + esc(i.kind) + "' data-id='" + esc(i.id) + "' data-label='" + esc(i.label) + "'>" + b[1] + "</button>";
         }).join("") + "</div></li>";
     }).join("") : "<li class='muted'>Nothing " + adminTab + ".</li>";
@@ -837,8 +841,9 @@
   $("#host-select").innerHTML = "<option value=''>— Open / independent —</option>" +
     CREWS.map(function (c) { return "<option value='" + esc(c.id) + "'>" + esc(c.name) + "</option>"; }).join("");
 
-  function openModal() { modal.hidden = false; updateGate(); resetDates(); }
+  function openModal() { if (editing) { editing = null; form.reset(); picked = null; $("#pick-coords").textContent = "No location yet"; } setFormMode(false); modal.hidden = false; updateGate(); resetDates(); }
   function closeModal() {
+    if (editing && adminDirty) { setTimeout(function () { location.reload(); }, 300); }
     modal.hidden = true; modal.classList.remove("picking"); $("#pick-hint").hidden = true;
     map.getContainer().classList.remove("picking-map");
     if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; }
@@ -856,6 +861,69 @@
       $(".kind-crew").hidden = kind !== "crew";
       $("#out").hidden = true;
     };
+  });
+
+  /* ---------------- admin: edit a meet (reuses the submit form) ---------------- */
+  var editing = null; // { id } while editing an existing meet
+  function setFormMode(edit) {
+    $("#modal-title").textContent = edit ? "Edit meet" : "Put it on the map";
+    $(".seg").hidden = !!edit;
+    $$(".only-sheet").forEach(function (el) { el.hidden = !!edit || !API; });
+    $("#submit-go").textContent = edit ? "Save changes" : (API ? "Submit for approval" : "Generate entry");
+  }
+  function findMeetForEdit(id) {
+    var e = eventById[id];
+    if (e) return { id: e.id, title: e.title, type: e.type, host: e.host, start: e.start, end: e.end || "",
+                    place: e.place, details: e.details, link: e.link, coords: e.coords };
+    var i = adminItems.filter(function (x) { return x.kind === "meet" && x.id === id; })[0];
+    if (i) return { id: i.id, title: i.label, type: i.type, host: i.host, start: i.start, end: i.end || "",
+                    place: i.where, details: i.details, link: i.link, coords: [Number(i.lat), Number(i.lng)] };
+    return null;
+  }
+  function openEdit(id, repost) {
+    var m = findMeetForEdit(id);
+    if (!m) { toast("Couldn't find that meet", "Refresh and try again."); return; }
+    if (!$("#admin-panel").hidden) $("#admin-panel").hidden = true; // keep adminDirty so the map refreshes after
+    map.closePopup();
+    form.reset(); $("#out").hidden = true;
+    editing = { id: m.id, repost: !!repost };
+    kind = "meet";
+    $$(".seg-btn").forEach(function (x) { x.classList.toggle("active", x.dataset.kind === "meet"); });
+    $(".kind-meet").hidden = false; $(".kind-crew").hidden = true;
+    setFormMode(true);
+    var hostSel = $("#host-select");
+    if (m.host && !hostSel.querySelector("option[value='" + m.host.replace(/'/g, "") + "']")) {
+      var o = document.createElement("option"); o.value = m.host; o.textContent = m.host; hostSel.appendChild(o);
+    }
+    var set = function (n, v) { var el = form.elements[n]; if (el) el.value = v == null ? "" : v; };
+    set("title", m.title); set("type", m.type || "meet"); set("host", m.host || "");
+    set("start_date", (m.start || "").slice(0, 10)); set("start_time", (m.start || "").slice(11, 16));
+    set("end_date", (m.end || "").slice(0, 10)); set("end_time", (m.end || "").slice(11, 16));
+    set("place", m.place); set("details", m.details); set("link", m.link);
+    $$("#submit-form input[type=date]").forEach(function (d) { d.min = ""; }); // past/ongoing meets are editable
+    picked = (m.coords && isFinite(m.coords[0])) ? [m.coords[0], m.coords[1]] : null;
+    $("#pick-coords").textContent = picked ? picked.join(", ") + " (tap 📍 to move)" : "No location yet";
+    if (picked) { if (pickMarker) pickMarker.setLatLng(picked); else pickMarker = L.marker(picked).addTo(map); }
+    if (repost) {
+      $("#modal-title").textContent = "Repost meet";
+      $("#submit-go").textContent = "Repost";
+      // suggest a fresh date: same weekday/time, next occurrence from today
+      var today = phTodayISO();
+      if (form.elements.start_date.value < today) {
+        var len = 0;
+        if (m.end) { var sD = parseDate(m.start), eD = parseDate(m.end); if (sD && eD) len = Math.round((eD - sD) / 864e5); }
+        form.elements.start_date.value = today;
+        form.elements.end_date.value = len > 0 ? (function (d) { for (var k = 0; k < len; k++) d = addDay(d); return d; })(today) : "";
+      }
+      $$("#submit-form input[type=date]").forEach(function (d) { d.min = today; });
+    }
+    modal.hidden = false; updateGate(); updateDtHint();
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-admin-edit]"); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (!ROLE.admin) return;
+    openEdit(b.dataset.adminEdit, b.dataset.repost === "1");
   });
 
   function startPick() {
@@ -939,6 +1007,31 @@
 
     var logo = (f.logo || "").trim();
     var logoPath = /^https?:\/\//i.test(logo) ? logo : (logo ? "club_logos/" + logo : "");
+
+    // ---- Admin edit: save changes to an existing meet ----
+    if (editing && API) {
+      if (sending) return;
+      sending = true;
+      var sbtn = $("#submit-go"); sbtn.disabled = true; sbtn.textContent = "Saving…";
+      api({ action: "admin_update", kind: "meet", id: editing.id, title: f.title, type: f.type, host: f.host,
+            start: f.start, end: f.end, place: f.place, details: f.details, link: f.link, lat: picked[0], lng: picked[1] })
+        .then(function (r) {
+          if (r.auth) { auth.token = ""; store.set("auth", auth); updateGate(); throw new Error("Your session expired — sign in again."); }
+          if (!r.ok) throw new Error(r.error || "Couldn't save");
+          if (editing.repost) return api({ action: "admin_restore", kind: "meet", id: editing.id }).then(function (r2) {
+            if (!r2.ok) throw new Error(r2.error || "Saved, but couldn't put it back on the map");
+            return "reposted";
+          });
+        })
+        .then(function (res) {
+          editing = null; adminDirty = false; closeModal();
+          toast(res === "reposted" ? "Reposted ✅" : "Saved ✅", "Refreshing the map…", 3000);
+          setTimeout(function () { location.reload(); }, 900);
+        })
+        .catch(function (err) { toast("Couldn't save", err.message); })
+        .then(function () { sending = false; sbtn.disabled = false; if (editing) sbtn.textContent = editing.repost ? "Repost" : "Save changes"; });
+      return;
+    }
 
     // ---- Live mode: send to the Google Sheet for approval ----
     if (API) {
