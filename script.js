@@ -687,6 +687,9 @@
       $("#acct-name").textContent = auth.name || "";
       $("#acct-email").textContent = auth.email || "";
       $("#acct-in").hidden = false; $("#acct-out").hidden = true;
+      var expired = !authValid();
+      $("#acct-expired").hidden = !expired;
+      if (expired) renderGisButton($("#gsi-reauth-btn"), true);
     } else {
       btn.innerHTML = "<svg viewBox='0 0 24 24'><path d='M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.4 0-9 2.2-9 5v3h18v-3c0-2.8-4.6-5-9-5Z'/></svg>";
       btn.title = "Sign in";

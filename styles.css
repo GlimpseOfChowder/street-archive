@@ -294,6 +294,8 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
 .btn-danger:hover { background: rgba(255,59,59,.25); }
 .leaflet-container .pop .btn-danger { color: #ff8080; }
 .acct-actions { display: flex; gap: 8px; }
+.acct-expired { margin: 4px 0 10px; padding: 10px; border-radius: 10px; background: rgba(255,212,0,.08); border: 1px solid rgba(255,212,0,.3); }
+.acct-expired p { margin: 0 0 8px; color: var(--text); font-size: 14px; }
 .admin-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 2px; padding-top: 8px; border-top: 1px dashed rgba(255,59,59,.35); font-size: 13px; }
 .admin-row > span { color: #ff8080; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; font-size: 11px; margin-right: 2px; }
 .admin-card { width: min(640px, 100%); }
