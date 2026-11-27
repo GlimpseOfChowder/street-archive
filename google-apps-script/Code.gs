@@ -9,7 +9,10 @@
    - POST {action:"submit"}     → signed-in user adds a meet/crew (unapproved,
                                   or live at once if the user is "trusted")
    - POST {action:"mine"}       → the signed-in user's own posts + status
-   - Users tab                  → tick "banned" to block, "trusted" to auto-approve
+   - Users tab                  → tick "banned" to block, "trusted" to auto-approve,
+                                  "admin" to get the in-site admin panel
+   - POST {action:"whoami"}     → signed-in user's role (admin / trusted)
+   - POST {action:"admin_*"}    → admins list / approve / archive / restore / delete
    ===================================================================== */
 
 // From Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web).
@@ -26,12 +29,12 @@ var NOTIFY_EMAIL = "";
 var TZ = "Asia/Manila";
 
 var SHEETS = {
-  Meets: ["submitted_at", "approved", "id", "title", "type", "host", "start", "end", "place", "lat", "lng", "details", "link", "contact", "submitted_by"],
-  Crews: ["submitted_at", "approved", "id", "name", "area", "color", "radius_km", "lat", "lng", "logo", "link", "tags", "contact", "submitted_by"],
-  Users: ["user_id", "email", "name", "first_seen", "last_seen", "posts", "trusted", "banned", "notes"]
+  Meets: ["submitted_at", "approved", "id", "title", "type", "host", "start", "end", "place", "lat", "lng", "details", "link", "contact", "submitted_by", "archived"],
+  Crews: ["submitted_at", "approved", "id", "name", "area", "color", "radius_km", "lat", "lng", "logo", "link", "tags", "contact", "submitted_by", "archived"],
+  Users: ["user_id", "email", "name", "first_seen", "last_seen", "posts", "trusted", "banned", "admin", "notes"]
 };
 // Never sent to the website:
-var PRIVATE = ["submitted_at", "approved", "contact", "submitted_by"];
+var PRIVATE = ["submitted_at", "approved", "contact", "submitted_by", "archived"];
 // Stored as plain text so Sheets doesn't turn them into dates/numbers:
 var TEXT_COLS = ["id", "host", "start", "end", "color", "logo", "link", "tags", "contact", "title", "name", "place", "area", "details", "submitted_by", "user_id", "email", "notes"];
 
@@ -68,7 +71,7 @@ function doGet() {
 }
 
 function publicRows_(ss, name) {
-  return rows_(ss, name).filter(function (o) { return isTrue_(o.approved); }).map(function (o) {
+  return rows_(ss, name).filter(function (o) { return isTrue_(o.approved) && !isTrue_(o.archived); }).map(function (o) {
     var pub = {};
     Object.keys(o).forEach(function (h) {
       if (PRIVATE.indexOf(h) > -1 || h.charAt(0) === "_") return;
@@ -101,8 +104,18 @@ function doPost(e) {
 
     lock.waitLock(10000);
     var u = user ? upsertUser_(ss, user) : null;
+    var admin = !!(u && isTrue_(u.admin) && !isTrue_(u.banned));
+
+    if (d.action === "whoami") {
+      return json_({ ok: true, admin: admin, trusted: !!(u && (isTrue_(u.trusted) || admin)), banned: !!(u && isTrue_(u.banned)) });
+    }
+    if (String(d.action || "").indexOf("admin_") === 0) {
+      if (!admin) return json_({ ok: false, error: "Admins only." });
+      return json_(adminAction_(ss, d));
+    }
+
     if (u && isTrue_(u.banned)) return json_({ ok: false, error: "This account can't post. Contact the admin if you think this is a mistake." });
-    var trusted = u && isTrue_(u.trusted);
+    var trusted = u && (isTrue_(u.trusted) || admin);
     if (u && !trusted && postsToday_(ss, user.email) >= DAILY_LIMIT) return json_({ ok: false, error: "Daily limit reached (" + DAILY_LIMIT + " posts). Try again tomorrow." });
 
     var lat = Number(d.lat), lng = Number(d.lng);
@@ -180,10 +193,10 @@ function upsertUser_(ss, user) {
       return all[i];
     }
   }
-  var rec = { user_id: user.sub, email: user.email, name: user.name, first_seen: now, last_seen: now, posts: 0, trusted: false, banned: false, notes: "" };
+  var rec = { user_id: user.sub, email: user.email, name: user.name, first_seen: now, last_seen: now, posts: 0, trusted: false, banned: false, admin: false, notes: "" };
   sh.appendRow(head.map(function (h) { return rec.hasOwnProperty(h) ? rec[h] : ""; }));
   var rn = sh.getLastRow();
-  ["trusted", "banned"].forEach(function (c) { var ci = head.indexOf(c) + 1; if (ci > 0) sh.getRange(rn, ci).insertCheckboxes(); });
+  ["trusted", "banned", "admin"].forEach(function (c) { var ci = head.indexOf(c) + 1; if (ci > 0) sh.getRange(rn, ci).insertCheckboxes(); });
   return rec;
 }
 function bumpPosts_(ss, sub) {
@@ -210,10 +223,70 @@ function mine_(ss, email) {
     rows_(ss, x[0]).forEach(function (o) {
       if (String(o.submitted_by).toLowerCase() !== email) return;
       var at = o.submitted_at instanceof Date ? Utilities.formatDate(o.submitted_at, TZ, "yyyy-MM-dd HH:mm") : String(o.submitted_at);
-      out.push({ kind: x[1], id: String(o.id), label: String(o[x[2]]), approved: isTrue_(o.approved), submitted_at: at });
+      out.push({ kind: x[1], id: String(o.id), label: String(o[x[2]]), approved: isTrue_(o.approved) && !isTrue_(o.archived), archived: isTrue_(o.archived), submitted_at: at });
     });
   });
   return out.sort(function (a, b) { return a.submitted_at < b.submitted_at ? 1 : -1; }).slice(0, 50);
+}
+
+
+/* ---------- admin ---------- */
+function adminAction_(ss, d) {
+  if (d.action === "admin_list") {
+    var items = [];
+    [["Meets", "meet", "title", "place"], ["Crews", "crew", "name", "area"]].forEach(function (x) {
+      rows_(ss, x[0]).forEach(function (o) {
+        var at = o.submitted_at instanceof Date ? Utilities.formatDate(o.submitted_at, TZ, "yyyy-MM-dd HH:mm") : String(o.submitted_at);
+        var st = o.start instanceof Date ? Utilities.formatDate(o.start, TZ, "yyyy-MM-dd'T'HH:mm") : String(o.start || "");
+        items.push({ kind: x[1], id: String(o.id), label: String(o[x[2]]), where: String(o[x[3]] || ""), start: st,
+          by: String(o.submitted_by || ""), submitted_at: at, lat: o.lat, lng: o.lng,
+          status: isTrue_(o.archived) ? "archived" : isTrue_(o.approved) ? "live" : "pending" });
+      });
+    });
+    items.sort(function (a, b) { return a.submitted_at < b.submitted_at ? 1 : -1; });
+    return { ok: true, items: items };
+  }
+  var name = d.kind === "meet" ? "Meets" : d.kind === "crew" ? "Crews" : "";
+  if (!name) return { ok: false, error: "Unknown type." };
+  var sh = ss.getSheetByName(name);
+  var head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+  var row = null;
+  rows_(ss, name).forEach(function (o) { if (String(o.id) === String(d.id)) row = o; });
+  if (!row) return { ok: false, error: "Not found (it may only exist in the site's data files)." };
+  var ac = head.indexOf("approved") + 1, xc = head.indexOf("archived") + 1;
+  function setBox(col, val) { if (col > 0) { var r = sh.getRange(row._row, col); r.insertCheckboxes(); r.setValue(val); } }
+  if (d.action === "admin_approve") { setBox(ac, true); setBox(xc, false); }
+  else if (d.action === "admin_archive") { setBox(xc, true); }
+  else if (d.action === "admin_restore") { setBox(xc, false); setBox(ac, true); }
+  else if (d.action === "admin_delete") { sh.deleteRow(row._row); }
+  else return { ok: false, error: "Unknown action." };
+  CacheService.getScriptCache().remove("public");
+  return { ok: true };
+}
+
+/* ---------- one-time: copy the original crews into the Sheet (run from the editor) ---------- */
+function seedCrews() {
+  setup();
+  var crews = [
+    ["dts", "Downtown Society", "Capas, Tarlac", "#ff3b3b", 4, 15.3358, 120.58935, "club_logos/dts.jpg", "https://www.facebook.com/profile.php?id=61567140809882", ""],
+    ["noinvite", "No Invite", "Tarlac City", "#a855f7", 4.5, 15.4847, 120.5861, "club_logos/noinvite.jpg", "https://www.facebook.com/Team.NoInvte", ""],
+    ["hotcakes", "Hotcakes", "Pampanga", "#ffb020", 2.5, 15.182224, 120.574117, "club_logos/hotcakes.jpg", "https://www.facebook.com/profile.php?id=61577142807450", ""],
+    ["sbc", "Sarapbuhaycrew", "Pampanga", "#22d3ee", 2.5, 15.1764068, 120.5206831, "club_logos/sbc.jpg", "https://www.facebook.com/sarapbuhaycrew", ""],
+    ["juiced", "juiced", "Manila", "#39ff88", 3.5, 14.5995, 120.9842, "club_logos/juiced.jpg", "https://www.facebook.com/profile.php?id=61555461780515", ""],
+    ["stancepilipinas", "Stance Pilipinas", "Manila", "#ff4fd8", 3.5, 14.5995, 120.9842, "club_logos/spmf.jpg", "https://www.facebook.com/stancepilipinas", "Stance"]
+  ];
+  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName("Crews");
+  var head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+  var have = rows_(ss, "Crews").map(function (o) { return String(o.id); });
+  var now = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm");
+  crews.forEach(function (c) {
+    if (have.indexOf(c[0]) > -1) return;
+    var rec = { submitted_at: now, approved: true, archived: false, id: c[0], name: c[1], area: c[2], color: c[3], radius_km: c[4], lat: c[5], lng: c[6], logo: c[7], link: c[8], tags: c[9], contact: "", submitted_by: "admin" };
+    sh.appendRow(head.map(function (h) { return rec.hasOwnProperty(h) ? rec[h] : ""; }));
+    var rn = sh.getLastRow();
+    ["approved", "archived"].forEach(function (k) { var ci = head.indexOf(k) + 1; if (ci > 0) { sh.getRange(rn, ci).insertCheckboxes(); sh.getRange(rn, ci).setValue(rec[k]); } });
+  });
+  CacheService.getScriptCache().remove("public");
 }
 
 /* ---------- helpers ---------- */
