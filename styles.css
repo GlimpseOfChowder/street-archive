@@ -452,3 +452,11 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
 .mbtns { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn.confirm { background: #ff3b3b; color: #fff; border-color: #ff3b3b; }
 #acct-btn.has-badge { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #ff3b3b; }
+
+/* swipe between tabs (mobile) */
+.tab-body { transition: transform .2s ease, opacity .2s ease; }
+.tab-body.tab-dragging { transition: none; }
+@keyframes slideFromRight { from { transform: translateX(40px); opacity: .3; } to { transform: none; opacity: 1; } }
+@keyframes slideFromLeft { from { transform: translateX(-40px); opacity: .3; } to { transform: none; opacity: 1; } }
+.tab-body.slide-from-right { animation: slideFromRight .22s ease-out; }
+.tab-body.slide-from-left { animation: slideFromLeft .22s ease-out; }

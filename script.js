@@ -606,12 +606,12 @@
     // Swipe the list itself: pulling down while it's scrolled to the top
     // (or swiping up while peeking) moves the sheet instead of scrolling,
     // so the phone's pull-to-refresh never kicks in.
-    var tb = null, ty0 = 0, tx0 = 0, tyLast = 0, ttLast = 0, tvel = 0, tmode = null;
+    var tb = null, ty0 = 0, tx0 = 0, tyLast = 0, txLast = 0, ttLast = 0, tvel = 0, txVel = 0, tmode = null, tTarget = null;
     $$(".tab-body").forEach(function (body) {
       body.addEventListener("touchstart", function (e) {
         if (!mq.matches || e.touches.length > 1) { tmode = "scroll"; return; }
-        tb = body; tmode = null; tvel = 0;
-        ty0 = tyLast = e.touches[0].clientY; tx0 = e.touches[0].clientX; ttLast = Date.now();
+        tb = body; tmode = null; tvel = 0; txVel = 0; tTarget = e.target;
+        ty0 = tyLast = e.touches[0].clientY; tx0 = txLast = e.touches[0].clientX; ttLast = Date.now();
         startVis = sheetPx(sheet);
       }, { passive: true });
       body.addEventListener("touchmove", function (e) {
@@ -620,10 +620,24 @@
         if (tmode === null) {
           if (Math.abs(dy) < 3 && Math.abs(dx) < 3) return;
           var atTop = body.scrollTop <= 0;
-          if (Math.abs(dx) > Math.abs(dy)) tmode = "scroll";                   // sideways chip scrolling
+          if (Math.abs(dx) > Math.abs(dy)) {
+            // sideways: chip rows / dropdowns keep their own scrolling; anywhere else flips tabs
+            tmode = (tTarget && tTarget.closest && tTarget.closest(".chips, select, input, textarea")) ? "scroll" : "tab";
+            if (tmode === "tab") body.classList.add("tab-dragging");
+          }
           else if (sheet !== "full" || (dy > 0 && atTop)) tmode = e.cancelable ? "sheet" : "scroll";
           else tmode = "scroll";
           if (tmode === "sheet") panel.classList.add("dragging");
+        }
+        if (tmode === "tab") {
+          if (e.cancelable) e.preventDefault();
+          var nowX = Date.now();
+          txVel = (e.touches[0].clientX - txLast) / Math.max(1, nowX - ttLast); txLast = e.touches[0].clientX; ttLast = nowX;
+          var i = tabIndex(), edge = (dx > 0 && i === 0) || (dx < 0 && i === TAB_ORDER.length - 1);
+          var move = dx * (edge ? 0.15 : 0.45);                                 // resist at the first / last tab
+          body.style.transform = "translateX(" + move + "px)";
+          body.style.opacity = String(1 - Math.min(0.35, Math.abs(move) / 400));
+          return;
         }
         if (tmode !== "sheet") return;
         e.preventDefault();
@@ -633,6 +647,12 @@
         panel.style.transform = "translateY(" + (panel.offsetHeight - vis) + "px)";
       }, { passive: false });
       function tend() {
+        if (tmode === "tab") {
+          var dx = txLast - tx0, i = tabIndex(), next = i + (dx < 0 ? 1 : -1);
+          body.classList.remove("tab-dragging");
+          body.style.transform = ""; body.style.opacity = "";
+          if ((Math.abs(dx) > 60 || Math.abs(txVel) > 0.45) && next >= 0 && next < TAB_ORDER.length) switchTab(TAB_ORDER[next], dx < 0 ? "left" : "right");
+        }
         if (tmode === "sheet") {
           panel.classList.remove("dragging");
           var dy = tyLast - ty0;
@@ -645,6 +665,18 @@
     });
   })();
 
+  var TAB_ORDER = ["meets", "crews", "places"];
+  function tabIndex() { var a = $(".tab.active"); return Math.max(0, TAB_ORDER.indexOf(a ? a.dataset.tab : "meets")); }
+  // from = "left" means the new tab slides in from the right (you swiped left)
+  function switchTab(name, from) {
+    var btn = $(".tab[data-tab='" + name + "']"); if (!btn) return;
+    btn.onclick();
+    var body = $("#tab-" + name);
+    if (from && body) {
+      body.classList.remove("slide-from-left", "slide-from-right"); void body.offsetWidth;
+      body.classList.add(from === "left" ? "slide-from-right" : "slide-from-left");
+    }
+  }
   $$(".tab").forEach(function (b) {
     b.onclick = function () {
       $$(".tab").forEach(function (x) { x.classList.toggle("active", x === b); });
