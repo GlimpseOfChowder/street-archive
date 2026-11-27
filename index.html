@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Street Archive — Car Crew Turf Map</title>
+  <meta name="description" content="Street Archive: the turf map for car crews. Find clubs, meets, cruises and shows near you.">
+  <meta name="theme-color" content="#0b0d12">
+  <link rel="icon" href="club_logos/site_logo.png">
+
+  <!-- Leaflet (free, open-source map library) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Covered+By+Your+Grace&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div id="map" aria-label="Turf map"></div>
+
+  <div id="boot" class="boot"><img src="club_logos/site_logo.png" alt=""><span>Loading turf…</span></div>
+
+  <!-- ===== Top HUD ===== -->
+  <header class="hud-top">
+    <a href="./" class="brand" title="Street Archive">
+      <img src="club_logos/site_logo.png" alt="Street Archive" class="site-logo">
+    </a>
+
+    <div class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2a8 8 0 1 0 4.9 14.3l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0 0 10 2Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Z"/></svg>
+      <input id="search" type="search" placeholder="Search crews, meets, places…" autocomplete="off">
+      <div id="search-results" class="search-results" hidden></div>
+    </div>
+
+    <div id="account" class="account" hidden>
+      <button id="acct-btn" class="acct-btn" title="Sign in"></button>
+      <div id="acct-menu" class="acct-menu" hidden>
+        <div id="acct-out">
+          <p>Sign in to post meets and claim your crew's turf.</p>
+          <div id="gsi-menu-btn" class="gsi-slot"></div>
+        </div>
+        <div id="acct-in" hidden>
+          <div class="acct-who"><b id="acct-name"></b><span id="acct-email" class="muted"></span></div>
+          <h5>My posts</h5>
+          <ul id="acct-posts" class="acct-posts"></ul>
+          <button id="acct-signout" class="btn sm">Sign out</button>
+        </div>
+      </div>
+    </div>
+
+    <button id="btn-submit" class="btn btn-accent" title="Add a crew or post a meet">+<span class="lbl"> Submit</span></button>
+  </header>
+
+  <!-- ===== Side panel ===== -->
+  <aside id="panel" class="panel">
+    <button id="panel-toggle" class="panel-toggle" aria-label="Toggle panel">
+      <span class="chev">‹</span>
+    </button>
+    <div class="sheet-handle" id="sheet-handle" aria-label="Drag to resize"><span></span></div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="meets" role="tab">Meets <span id="new-badge" class="badge" hidden></span></button>
+      <button class="tab" data-tab="crews" role="tab">Crews <span id="crew-count" class="count"></span></button>
+    </nav>
+
+    <section id="tab-meets" class="tab-body">
+      <div class="chips" id="meet-filters">
+        <button class="chip active" data-f="all">All</button>
+        <button class="chip" data-f="week">This week</button>
+        <button class="chip" data-f="near">Near me</button>
+        <button class="chip" data-f="saved">Reminders</button>
+      </div>
+      <ul id="meet-list" class="list"></ul>
+    </section>
+
+    <section id="tab-crews" class="tab-body" hidden>
+      <ul id="crew-list" class="list"></ul>
+    </section>
+
+    <footer class="panel-foot">
+      <span>Turf data is community-submitted. · <a href="privacy.html" style="color:inherit">Privacy</a></span>
+    </footer>
+  </aside>
+
+  <!-- ===== Map controls (bottom right) ===== -->
+  <div class="hud-controls">
+    <button id="btn-locate" class="round" title="Show my location">
+      <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm9 3h-2.1A7 7 0 0 0 13 5.1V3h-2v2.1A7 7 0 0 0 5.1 11H3v2h2.1a7 7 0 0 0 5.9 5.9V21h2v-2.1a7 7 0 0 0 5.9-5.9H21v-2Zm-9 6a5 5 0 1 1 0-10 5 5 0 0 1 0 10Z"/></svg>
+    </button>
+    <button id="btn-layer" class="round" title="Switch map style">
+      <svg viewBox="0 0 24 24"><path d="m12 2 10 6-10 6L2 8l10-6Zm-8.3 9.9L12 17l8.3-5.1L22 13l-10 6-10-6 1.7-1.1Z"/></svg>
+    </button>
+    <button id="btn-turf" class="round active" title="Show / hide turf">
+      <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3Zm10 0h8v8h-8V3ZM3 13h8v8H3v-8Zm10 0h8v8h-8v-8Z" opacity=".9"/></svg>
+    </button>
+  </div>
+
+  <div id="layer-name" class="layer-name"></div>
+
+  <!-- ===== Legend ===== -->
+  <div class="legend">
+    <span><i class="lg lg-turf"></i>Turf</span>
+    <span><i class="lg lg-meet"></i>Meet</span>
+  </div>
+
+  <!-- ===== Toasts ===== -->
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <!-- ===== Submit modal ===== -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <button class="modal-x" data-close aria-label="Close">×</button>
+      <h2 id="modal-title">Put it on the map</h2>
+
+      <div class="seg">
+        <button class="seg-btn active" data-kind="meet">Post a meet</button>
+        <button class="seg-btn" data-kind="crew">Claim turf (crew)</button>
+      </div>
+
+      <div id="signin-gate" class="signin-gate" hidden>
+        <p id="gate-msg"></p>
+        <div id="gsi-modal-btn" class="gsi-slot"></div>
+      </div>
+
+      <form id="submit-form" autocomplete="off">
+        <div class="kind kind-meet">
+          <label>Meet name<input name="title" placeholder="Friday Night Meet"></label>
+          <div class="row">
+            <label>Type
+              <select name="type">
+                <option value="meet">Meet</option>
+                <option value="cruise">Cruise</option>
+                <option value="show">Car show</option>
+                <option value="track">Track day</option>
+              </select>
+            </label>
+            <label>Host crew<select name="host" id="host-select"></select></label>
+          </div>
+          <div class="row">
+            <label>Starts<input name="start" type="datetime-local"></label>
+            <label>Ends<input name="end" type="datetime-local"></label>
+          </div>
+          <label>Venue<input name="place" placeholder="Parking lot / landmark"></label>
+          <label>Details<textarea name="details" rows="2" placeholder="Rules, entry fee, theme…"></textarea></label>
+          <label>FB event / post link<input name="link" type="url" placeholder="https://facebook.com/…"></label>
+        </div>
+
+        <div class="kind kind-crew" hidden>
+          <label>Crew name<input name="name" placeholder="Crew name"></label>
+          <div class="row">
+            <label>Area<input name="area" placeholder="City, Province"></label>
+            <label>Turf colour<input name="color" type="color" value="#ff3b3b"></label>
+          </div>
+          <div class="row">
+            <label>Turf radius (km)<input name="radius" type="number" min="0.5" max="30" step="0.5" value="3"></label>
+            <label>Logo (image link)<input name="logo" placeholder="https://… or mycrew.jpg"></label>
+          </div>
+          <label>FB / IG page<input name="pagelink" type="url" placeholder="https://facebook.com/…"></label>
+          <label>Style tags (optional)<input name="tags" placeholder="JDM, Stance, Euro"></label>
+        </div>
+
+        <label class="only-sheet" hidden>Your FB page (optional) <span class="muted">— only the admin sees this</span><input name="contact" placeholder="So we can reach you if something's unclear"></label>
+        <input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+        <div class="pick">
+          <button type="button" id="btn-pick" class="btn">📍 Pick location on map</button>
+          <span id="pick-coords" class="muted">No location yet</span>
+        </div>
+
+        <div class="out" id="out" hidden>
+          <p class="muted">Paste this into <code id="out-file">data/events.js</code> (inside the list):</p>
+          <pre id="out-code"></pre>
+          <div class="row">
+            <button type="button" id="btn-copy" class="btn btn-accent">Copy</button>
+            <a id="btn-send" class="btn" target="_blank" rel="noopener" hidden>Send it to us</a>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close>Cancel</button>
+          <button type="submit" id="submit-go" class="btn btn-accent">Generate entry</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="pick-hint" class="pick-hint" hidden>Tap the map to drop the pin · <button id="pick-cancel">cancel</button></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="js/config.js"></script>
+  <script src="data/crews.js"></script>
+  <script src="data/events.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
