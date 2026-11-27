@@ -20,7 +20,7 @@
 <main>
   <a href="./"><img src="club_logos/site_logo.png" alt="Street Archive"></a>
   <h1>Privacy Policy</h1>
-  <p class="muted">Last updated: 27 November 2026</p>
+  <p class="muted">Last updated: 28 November 2026</p>
 
   <p>Street Archive is a free, community-run map of car clubs ("crews"), meets, cruises and car shows in the Philippines. This page explains what information the site handles and why.</p>
 
@@ -37,20 +37,24 @@
   <p>Your email address is <b>never shown publicly</b> on the map. We don't sell, rent or share your information with anyone, and we don't use it for advertising.</p>
 
   <h2>What you post</h2>
-  <p>Meets and crews you submit (name, place, time, description, links, logo link and the map location you pick) are reviewed by the site admin and, once approved, are <b>public</b> on the map. The optional "Your FB page" contact field is seen only by the admin. Don't include private information in public fields.</p>
+  <p>Meets, crews and shops you submit (name, place, time, description, links, logo link and the map location you pick) are reviewed by the site admin and, once approved, are <b>public</b> on the map. Accounts with a good track record may have their posts go live without review. You can edit or delete your own posts at any time from "My posts". Don't include private information in public fields.</p>
+  <h2>Reports</h2>
+  <p>If you report a post, we store which post you reported, the reason you picked and your account, so the admin can review it and so the same person can't report a post twice. Reporters are never shown publicly.</p>
 
   <h2>Where data is stored</h2>
-  <p>Submissions and account details are stored in a Google Sheet owned by the site admin, using Google's services. Only the admin can access it.</p>
+  <p>Posts, reports and account details (name, email, profile picture) are stored in a database hosted by <a href="https://supabase.com" target="_blank" rel="noopener">Supabase</a>, with access rules so that only the admin can see account emails and unpublished posts.</p>
 
   <h2>Stored in your browser</h2>
-  <p>The site keeps a few things in your own browser (local storage): your sign-in session, meet reminders you set, your map style, which meets you've already seen, and a cached copy of the public map data. Clearing your browser data removes them.</p>
+  <p>The site keeps a few things in your own browser (local storage): your sign-in session (Supabase), meet reminders you set, your map style, which meets you've already seen, and a cached copy of the public map data. Clearing your browser data removes them.</p>
 
   <h2>Your location</h2>
   <p>"Show my location" and "Near me" use your device's location <b>only inside your browser</b> to centre the map and sort meets by distance. It is never sent to us or stored.</p>
 
   <h2>Third-party services</h2>
   <ul>
-    <li><b>Google</b> — sign-in, and Google Sheets / Apps Script for storing submissions.</li>
+    <li><b>Google</b> — sign-in.</li>
+    <li><b>Supabase</b> — database and sign-in sessions for posts, reports and accounts.</li>
+    <li><b>GitHub Pages</b> — hosts the website.</li>
     <li><b>Map tiles</b> — CARTO, Esri and OpenStreetMap supply the map images; your browser requests them directly from those providers.</li>
     <li><b>Place search</b> — OpenStreetMap Nominatim receives the text you search for.</li>
     <li><b>Links</b> — crew and event links open external sites (e.g. Facebook), which have their own privacy policies.</li>

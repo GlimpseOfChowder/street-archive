@@ -6,11 +6,12 @@
 (function () {
   "use strict";
 
-  /* ---------------- load approved submissions from the Google Sheet ----------------
-     js/config.js -> sheetApiUrl. Waits up to ~5 s; if the Sheet is slow or down we
-     use the last copy saved in this browser, then the built-in data files only. */
+  /* ---------------- load the map data from Supabase (js/backend.js) ----------------
+     Waits up to ~6 s; if the database is slow or down we use the last copy saved
+     in this browser, then the built-in data files only. */
   var BOOT_CFG = window.SA_CONFIG || {};
-  var API = /^https:\/\/script\.google(usercontent)?\.com\//.test(BOOT_CFG.sheetApiUrl || "") ? BOOT_CFG.sheetApiUrl : "";
+  var BE = window.SA_BACKEND;          // null = no database configured
+  var API = BE ? "supabase" : "";
   function cacheGet() { try { return JSON.parse(localStorage.getItem("sa:remote") || "null"); } catch (e) { return null; } }
   function cacheSet(d) { try { localStorage.setItem("sa:remote", JSON.stringify(d)); } catch (e) {} }
   var started = false;
@@ -21,8 +22,8 @@
   }
   if (!API) go(null);
   else {
-    var timer = setTimeout(function () { var c = cacheGet(); go(c, c ? "Showing saved data — live list is slow to load." : "Couldn't load submitted meets right now."); }, 5000);
-    fetch(API, { method: "GET" }).then(function (r) { return r.json(); }).then(function (d) {
+    var timer = setTimeout(function () { var c = cacheGet(); go(c, c ? "Showing saved data — live list is slow to load." : "Couldn't load submitted meets right now."); }, 6000);
+    BE.load().then(function (d) {
       if (!d || !Array.isArray(d.events)) throw new Error("bad data");
       cacheSet(d); clearTimeout(timer); go(d);
     }).catch(function () { clearTimeout(timer); var c = cacheGet(); go(c, c ? "Offline — showing saved data." : ""); });
@@ -32,6 +33,7 @@
   var CFG = window.SA_CONFIG || {};
   var CREWS = mergeById((window.SA_CREWS || []).slice(), (REMOTE.crews || []).map(remoteCrew).filter(Boolean));
   var RAW_EVENTS = mergeById((window.SA_EVENTS || []).slice(), (REMOTE.events || []).map(remoteEvent).filter(Boolean));
+  var PLACES = (REMOTE.places || []).map(remotePlace).filter(Boolean);
 
   // Local data files win if the same id exists in both places.
   function mergeById(local, remote) {
@@ -51,12 +53,20 @@
       tags: str(r.tags) ? str(r.tags).split(",").map(str).filter(Boolean) : [],
       turf: { center: [lat, lng], radius: Math.round((num(r.radius_km) || 3) * 1000) }, _src: "sheet" };
   }
+  function remotePlace(r) {
+    var lat = num(r.lat), lng = num(r.lng);
+    if (!str(r.id) || !str(r.name) || lat === null || lng === null) return null;
+    return { id: str(r.id), name: str(r.name), category: str(r.category) || "mechanic",
+      tags: str(r.tags) ? str(r.tags).split(",").map(str).filter(Boolean) : [],
+      area: str(r.area), phone: str(r.phone), hours: str(r.hours), link: str(r.link), details: str(r.details),
+      coords: [lat, lng], _src: "sheet" };
+  }
   function remoteEvent(r) {
     var lat = num(r.lat), lng = num(r.lng);
     if (!str(r.id) || !str(r.title) || !str(r.start) || lat === null || lng === null) return null;
     return { id: str(r.id), title: str(r.title), type: str(r.type) || "meet", host: str(r.host),
       start: str(r.start), end: str(r.end) || undefined, place: str(r.place), coords: [lat, lng],
-      details: str(r.details), link: str(r.link), _src: "sheet" };
+      details: str(r.details), link: str(r.link), visibility: str(r.visibility) || "public", _src: "sheet" };
   }
   var TZ = "Asia/Manila";
   var LABEL_ZOOM = 11;
@@ -271,6 +281,7 @@
       html += "</div>";
     }
     html += "<div class='actions'><button class='btn sm' data-share='crew=" + esc(t.crews[0].id) + "'>Share</button></div>";
+    t.crews.forEach(function (c) { html += reportLink("crew", c, t.crews.length > 1 ? c.name : ""); });
     return html + "</div>";
   }
 
@@ -279,6 +290,96 @@
     if (on) map.removeLayer(turfLayer); else map.addLayer(turfLayer);
     this.classList.toggle("active", !on);
   };
+
+  /* ---------------- places: mechanic shops, car washes & more ---------------- */
+  var PLACE_CATS = {
+    mechanic:  { label: "Mechanic",     color: "#4da3ff", icon: "M22.7 19 13.6 9.9c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4Z" },
+    carwash:   { label: "Car wash",     color: "#2dd4bf", icon: "M12 2.7c-.3 0-.5.1-.7.4C9.2 6.1 6 10.5 6 14a6 6 0 0 0 12 0c0-3.5-3.2-7.9-5.3-10.9-.2-.3-.4-.4-.7-.4Z" },
+    detailing: { label: "Detailing",    color: "#c084fc", icon: "M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4L12 2Zm7 13 1 2.6 2.6 1-2.6 1L19 22l-1-2.4-2.6-1 2.6-1L19 15Z" },
+    tint:      { label: "Tint & Wrap",  color: "#94a3b8", icon: "M3 5h18v4H3V5Zm0 6h18v8H3v-8Zm2 2v4h14v-4H5Z" },
+    tires:     { label: "Tires & Mags", color: "#f97316", icon: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12Zm0 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" },
+    parts:     { label: "Parts",        color: "#facc15", icon: "M21 7.5 12 2 3 7.5v9L12 22l9-5.5v-9ZM12 4.3l6.4 3.9L12 12 5.6 8.2 12 4.3Z" }
+  };
+  var PLACE_TAGS = ["JDM", "Euro", "American", "Korean", "Diesel", "Tuning / ECU", "Engine", "Transmission", "Suspension",
+    "Brakes", "Bodywork / Paint", "Electrical", "Aircon", "Exhaust", "Wheels / Alignment", "Ceramic coating", "PPF",
+    "Interior", "Motorcycle", "24/7"];
+  // Which specialties make sense for each type of place (the submit form only shows these).
+  var TAGS_BY_CAT = {
+    mechanic:  ["JDM", "Euro", "American", "Korean", "Diesel", "Tuning / ECU", "Engine", "Transmission", "Suspension",
+                "Brakes", "Bodywork / Paint", "Electrical", "Aircon", "Exhaust", "Wheels / Alignment", "Motorcycle", "24/7"],
+    carwash:   ["Ceramic coating", "24/7"],
+    detailing: ["Ceramic coating", "PPF", "Interior", "Bodywork / Paint", "Motorcycle"],
+    tint:      ["PPF", "Ceramic coating", "Motorcycle"],
+    tires:     ["Wheels / Alignment", "Brakes", "Suspension", "Motorcycle", "24/7"],
+    parts:     ["JDM", "Euro", "American", "Korean", "Diesel", "Engine", "Suspension", "Exhaust", "Brakes", "Electrical", "Motorcycle"]
+  };
+  function catOf(p) { return PLACE_CATS[p.category] || PLACE_CATS.mechanic; }
+  function placeSvg(p, size) { return "<svg viewBox='0 0 24 24' width='" + size + "' height='" + size + "'><path d='" + catOf(p).icon + "'/></svg>"; }
+  var placeById = {};
+  PLACES.forEach(function (p) { placeById[p.id] = p; });
+  var placeLayer = L.layerGroup().addTo(map);
+  var placeMarker = {};
+  PLACES.forEach(function (p) {
+    var c = catOf(p);
+    var icon = L.divIcon({ className: "blip-wrap", iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -14],
+      html: "<div class='place-blip' style='--c:" + c.color + "'>" + placeSvg(p, 15) + "</div>" });
+    var m = L.marker(p.coords, { icon: icon, title: p.name, zIndexOffset: 200 }).bindPopup(function () { return placePopup(p); }, { maxWidth: Math.min(320, window.innerWidth - 50), autoPanPaddingTopLeft: [12, 80], autoPanPaddingBottomRight: [12, 90] });
+    placeLayer.addLayer(m); placeMarker[p.id] = m;
+  });
+  function placePopup(p) {
+    var c = catOf(p), dest = p.coords[0] + "," + p.coords[1], link = safeUrl(p.link);
+    var html = "<div class='pop'><span class='tag' style='background:" + c.color + "22;color:" + c.color + "'>" + esc(c.label) + "</span>";
+    html += "<h3>" + esc(p.name) + "</h3>";
+    if (p.area) html += "<div class='sub'>📍 " + esc(p.area) + "</div>";
+    if (p.tags.length) html += "<div class='ptags'>" + p.tags.map(function (t) { return "<span class='tag tag-type'>" + esc(t) + "</span>"; }).join("") + "</div>";
+    if (p.hours) html += "<p>🕒 " + esc(p.hours) + "</p>";
+    if (p.details) html += "<p>" + esc(p.details) + "</p>";
+    html += "<div class='actions'>";
+    if (p.phone) html += "<a class='btn sm btn-accent' href='tel:" + esc(p.phone.replace(/[^\d+]/g, "")) + "'>📞 Call</a>";
+    html += "<a class='btn sm' target='_blank' rel='noopener' href='https://waze.com/ul?ll=" + dest + "&navigate=yes'>Waze</a>";
+    html += "<a class='btn sm' target='_blank' rel='noopener' href='https://www.google.com/maps/dir/?api=1&destination=" + dest + "'>Maps</a>";
+    if (link) html += "<a class='btn sm' target='_blank' rel='noopener' href='" + esc(link) + "'>Page ↗</a>";
+    html += "<button class='btn sm' data-share='place=" + esc(p.id) + "'>Share</button>";
+    return html + "</div>" + adminButtons("place", p) + reportLink("place", p) + "</div>";
+  }
+  function focusPlace(id) {
+    var p = placeById[id], m = placeMarker[id]; if (!p) return;
+    if (!map.hasLayer(placeLayer)) { map.addLayer(placeLayer); $("#btn-places").classList.add("active"); }
+    closePanelOnMobile();
+    map.flyTo(p.coords, Math.max(map.getZoom(), 15), { duration: 0.8 });
+    map.once("moveend", function () { m.openPopup(); });
+    history.replaceState(null, "", "#place=" + encodeURIComponent(id));
+  }
+  $("#btn-places").onclick = function () {
+    var on = map.hasLayer(placeLayer);
+    if (on) map.removeLayer(placeLayer); else map.addLayer(placeLayer);
+    this.classList.toggle("active", !on);
+  };
+  var placeCat = "all", placeTag = "";
+  function renderPlaceFilters() {
+    var cats = Object.keys(PLACE_CATS).filter(function (k) { return PLACES.some(function (p) { return p.category === k; }); });
+    $("#place-filters").innerHTML = "<button class='chip" + (placeCat === "all" ? " active" : "") + "' data-pc='all'>All</button>" +
+      cats.map(function (k) { return "<button class='chip" + (placeCat === k ? " active" : "") + "' data-pc='" + k + "'>" + esc(PLACE_CATS[k].label) + "</button>"; }).join("");
+    $$("#place-filters .chip").forEach(function (c) { c.onclick = function () { placeCat = c.dataset.pc; renderPlaceFilters(); renderPlaces(); }; });
+    var used = {}; PLACES.forEach(function (p) { p.tags.forEach(function (t) { used[t] = 1; }); });
+    $("#place-tag").innerHTML = "<option value=''>All specialties</option>" + Object.keys(used).sort().map(function (t) {
+      return "<option" + (t === placeTag ? " selected" : "") + ">" + esc(t) + "</option>"; }).join("");
+    $("#place-tag").hidden = !Object.keys(used).length;
+  }
+  $("#place-tag").onchange = function () { placeTag = this.value; renderPlaces(); };
+  function renderPlaces() {
+    $("#place-count").textContent = PLACES.length;
+    var list = PLACES.filter(function (p) { return (placeCat === "all" || p.category === placeCat) && (!placeTag || p.tags.indexOf(placeTag) > -1); });
+    if (myPos) list.sort(function (a, b) { return km(myPos, a.coords) - km(myPos, b.coords); });
+    else list.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    $("#place-list").innerHTML = list.length ? list.map(function (p) {
+      var c = catOf(p);
+      return "<li class='card' data-goto-place='" + esc(p.id) + "' style='--c:" + c.color + "'>" +
+        "<div class='place-ico' style='--c:" + c.color + "'>" + placeSvg(p, 20) + "</div>" +
+        "<div class='meta'><h4>" + esc(p.name) + "</h4><p>" + esc(c.label) + (p.area ? " · " + esc(p.area) : "") + (myPos ? " · " + km(myPos, p.coords).toFixed(0) + " km" : "") + "</p>" +
+        (p.tags.length ? "<p>" + esc(p.tags.join(" · ")) + "</p>" : "") + "</div></li>";
+    }).join("") : "<li class='empty'>" + (PLACES.length ? "Nothing matches that filter." : "No shops yet.<br>Know a good mechanic or car wash? Tap <b>+</b> → <b>Add a shop</b>.") + "</li>";
+  }
 
   /* ---------------- meets ---------------- */
   var FLAG = "<svg viewBox='0 0 24 24'><path d='M5 3h2v18H5V3Zm3 1h11l-2 4 2 4H8V4Z'/></svg>";
@@ -302,7 +403,7 @@
     var link = safeUrl(e.link);
     var dest = e.coords[0] + "," + e.coords[1];
     var html = "<div class='pop'>";
-    html += "<span class='tag tag-type'>" + esc(TYPE_LABEL[e.type] || "Meet") + "</span>" + (e.sample ? "<span class='tag tag-sample'>Sample</span>" : "") + (isLive(e) ? "<span class='tag tag-live'>Live</span>" : "");
+    html += "<span class='tag tag-type'>" + esc(TYPE_LABEL[e.type] || "Meet") + "</span>" + (e.sample ? "<span class='tag tag-sample'>Sample</span>" : "") + (e.visibility === "crew" ? "<span class='tag tag-sample'>Crew only</span>" : "") + (isLive(e) ? "<span class='tag tag-live'>Live</span>" : "");
     html += "<h3>" + esc(e.title) + "</h3>";
     html += "<div class='sub'><span class='when'>" + esc(fmtFull.format(e.startD)) + (e.end ? " – " + esc(fmtTime.format(e.endD)) : "") + "</span> · <span class='countdown'>" + esc(countdown(e)) + "</span></div>";
     if (host) html += "<div class='crew-row' style='--c:" + esc(host.color) + "'>" + (host.logo ? "<img src='" + esc(host.logo) + "' alt=''>" : "") + "<div>Hosted by <a data-goto-crew='" + esc(host.id) + "' href='#'>" + esc(host.name) + "</a></div></div>";
@@ -315,17 +416,18 @@
     html += "<a class='btn sm' target='_blank' rel='noopener' href='https://www.google.com/maps/dir/?api=1&destination=" + dest + "'>Maps</a>";
     html += "<button class='btn sm' data-share='meet=" + esc(e.id) + "'>Share</button>";
     if (link) html += "<a class='btn sm' target='_blank' rel='noopener' href='" + esc(link) + "'>Event page ↗</a>";
-    html += "</div>" + adminButtons("meet", e) + "<div>";
+    html += "</div>" + adminButtons("meet", e) + reportLink("meet", e) + "<div>";
     return html + "</div></div>";
   }
 
   /* ---------------- popup / list click delegation ---------------- */
   document.addEventListener("click", function (ev) {
-    var t = ev.target.closest("[data-goto-meet],[data-goto-crew],[data-remind],[data-ics],[data-share]");
+    var t = ev.target.closest("[data-goto-meet],[data-goto-crew],[data-goto-place],[data-remind],[data-ics],[data-share]");
     if (!t) return;
     ev.preventDefault();
     if (t.dataset.gotoMeet) focusMeet(t.dataset.gotoMeet);
     else if (t.dataset.gotoCrew) focusCrew(t.dataset.gotoCrew);
+    else if (t.dataset.gotoPlace) focusPlace(t.dataset.gotoPlace);
     else if (t.dataset.remind) toggleReminder(t.dataset.remind, t);
     else if (t.dataset.ics) downloadIcs(eventById[t.dataset.ics]);
     else if (t.dataset.share) share(t.dataset.share);
@@ -381,8 +483,8 @@
     var isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     if (isIOS) {
       // iOS can't "download" a calendar file from a page. Opening a real .ics URL
-      // (served by our Google Sheet backend) brings up the native "Add to Calendar" sheet.
-      if (API && e._src === "sheet") window.location.href = API + "?ics=" + encodeURIComponent(e.id);
+      // (served by our Supabase "ics" function) brings up the native "Add to Calendar" sheet.
+      if (BE && e._src === "sheet" && e.visibility !== "crew") window.location.href = BE.icsUrl(e.id);
       else window.location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
     } else {
       var blob = new Blob([ics], { type: "text/calendar" });
@@ -500,6 +602,47 @@
     window.addEventListener("pointercancel", up);
     $(".tabs").addEventListener("click", function (e) { if (suppressClick) { e.stopPropagation(); e.preventDefault(); } }, true);
     $("#sheet-handle").addEventListener("click", function () { if (!suppressClick) setSheet(sheet === "peek" ? "full" : "peek"); });
+
+    // Swipe the list itself: pulling down while it's scrolled to the top
+    // (or swiping up while peeking) moves the sheet instead of scrolling,
+    // so the phone's pull-to-refresh never kicks in.
+    var tb = null, ty0 = 0, tx0 = 0, tyLast = 0, ttLast = 0, tvel = 0, tmode = null;
+    $$(".tab-body").forEach(function (body) {
+      body.addEventListener("touchstart", function (e) {
+        if (!mq.matches || e.touches.length > 1) { tmode = "scroll"; return; }
+        tb = body; tmode = null; tvel = 0;
+        ty0 = tyLast = e.touches[0].clientY; tx0 = e.touches[0].clientX; ttLast = Date.now();
+        startVis = sheetPx(sheet);
+      }, { passive: true });
+      body.addEventListener("touchmove", function (e) {
+        if (tmode === "scroll" || tb !== body) return;
+        var y = e.touches[0].clientY, dy = y - ty0, dx = e.touches[0].clientX - tx0;
+        if (tmode === null) {
+          if (Math.abs(dy) < 3 && Math.abs(dx) < 3) return;
+          var atTop = body.scrollTop <= 0;
+          if (Math.abs(dx) > Math.abs(dy)) tmode = "scroll";                   // sideways chip scrolling
+          else if (sheet !== "full" || (dy > 0 && atTop)) tmode = e.cancelable ? "sheet" : "scroll";
+          else tmode = "scroll";
+          if (tmode === "sheet") panel.classList.add("dragging");
+        }
+        if (tmode !== "sheet") return;
+        e.preventDefault();
+        var now = Date.now();
+        tvel = (y - tyLast) / Math.max(1, now - ttLast); tyLast = y; ttLast = now;
+        var vis = Math.min(sheetPx("full"), Math.max(60, startVis - dy));
+        panel.style.transform = "translateY(" + (panel.offsetHeight - vis) + "px)";
+      }, { passive: false });
+      function tend() {
+        if (tmode === "sheet") {
+          panel.classList.remove("dragging");
+          var dy = tyLast - ty0;
+          setSheet((Math.abs(tvel) > 0.3 || Math.abs(dy) > 50) ? (dy < 0 ? "full" : "peek") : sheet);
+        }
+        tmode = null; tb = null;
+      }
+      body.addEventListener("touchend", tend);
+      body.addEventListener("touchcancel", tend);
+    });
   })();
 
   $$(".tab").forEach(function (b) {
@@ -507,6 +650,7 @@
       $$(".tab").forEach(function (x) { x.classList.toggle("active", x === b); });
       $("#tab-meets").hidden = b.dataset.tab !== "meets";
       $("#tab-crews").hidden = b.dataset.tab !== "crews";
+      $("#tab-places").hidden = b.dataset.tab !== "places";
       if (b.dataset.tab === "meets") markSeen();
       if (mq.matches && sheet === "peek") setSheet("full");
     };
@@ -572,6 +716,7 @@
     q = q.toLowerCase();
     var out = [];
     CREWS.forEach(function (c) { if ((c.name + " " + (c.area || "") + " " + (c.tags || []).join(" ")).toLowerCase().indexOf(q) > -1) out.push({ kind: "Crew", label: c.name, sub: c.area, go: function () { focusCrew(c.id); } }); });
+    PLACES.forEach(function (p) { if ((p.name + " " + (p.area || "") + " " + p.tags.join(" ") + " " + catOf(p).label).toLowerCase().indexOf(q) > -1) out.push({ kind: catOf(p).label, label: p.name, sub: p.area, go: function () { focusPlace(p.id); } }); });
     EVENTS.forEach(function (e) { if ((e.title + " " + (e.place || "")).toLowerCase().indexOf(q) > -1) out.push({ kind: "Meet", label: e.title, sub: fmtFull.format(e.startD), go: function () { focusMeet(e.id); } }); });
     return out.slice(0, 8);
   }
@@ -595,19 +740,26 @@
   function placeRow(q) {
     return { kind: "Place", label: "Search places for “" + q + "”", sub: "", go: function () { searchPlaces(q); } };
   }
-  function searchPlaces(q) {
-    if (Date.now() - lastGeo < 1100) return;
+  function geocode(q, cb) {
+    if (Date.now() - lastGeo < 1100) { cb(null); return; }
     lastGeo = Date.now();
-    fetch("https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=ph&q=" + encodeURIComponent(q))
+    var b = map.getBounds(); // prefer results near what's on screen
+    fetch("https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=ph&viewbox=" +
+          [b.getWest(), b.getNorth(), b.getEast(), b.getSouth()].map(function (n) { return n.toFixed(4); }).join(",") +
+          "&q=" + encodeURIComponent(q))
       .then(function (r) { return r.json(); })
-      .then(function (res) {
+      .then(cb).catch(function () { cb([]); });
+  }
+  function searchPlaces(q) {
+    geocode(q, function (res) {
+        if (res === null) return;
         if (!res.length) { toast("No places found", "Try a city or landmark name."); return; }
         if (res.length === 1) { map.flyTo([+res[0].lat, +res[0].lon], 14); return; }
         showResults(res.map(function (p) {
           return { kind: "Place", label: p.display_name.split(",").slice(0, 2).join(","), sub: "", go: function () { map.flyTo([+p.lat, +p.lon], 14); } };
         }));
         sInput.focus();
-      }).catch(function () { toast("Place search unavailable", "Try again in a moment."); });
+    });
   }
   sInput.addEventListener("input", function () {
     var q = sInput.value.trim();
@@ -634,7 +786,7 @@
       if (!meMarker) meMarker = L.marker(myPos, { icon: L.divIcon({ className: "", html: "<div class='me-dot'></div>", iconSize: [18, 18], iconAnchor: [9, 9] }), zIndexOffset: 1000 }).addTo(map);
       else meMarker.setLatLng(myPos);
       map.flyTo(myPos, 12);
-      renderMeets();
+      renderMeets(); renderPlaces();
     }, function () {
       toast("Couldn't get your location", "Allow location access in your browser settings.");
       if (meetFilter === "near") { meetFilter = "all"; $$("#meet-filters .chip").forEach(function (x) { x.classList.toggle("active", x.dataset.f === "all"); }); renderMeets(); }
@@ -645,16 +797,9 @@
   /* ---------------- Google sign-in (needed to post when configured) ---------------- */
   var CLIENT_ID = (CFG.googleClientId || "").trim();
   var AUTH_ON = !!(API && CLIENT_ID);
-  var auth = store.get("auth", null); // { token, exp, name, email, picture }
-  function authValid() { return !!(auth && auth.token && auth.exp * 1000 > Date.now() + 60000); }
-  function decodeJwt(t) {
-    try {
-      var p = t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-      p += "===".slice((p.length + 3) % 4);
-      return JSON.parse(decodeURIComponent(Array.prototype.map.call(atob(p), function (c) {
-        return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2); }).join("")));
-    } catch (e) { return null; }
-  }
+  // Signed-in state lives in Supabase (it renews sessions automatically).
+  var auth = BE ? BE.user() : null; // { id, name, email, picture }
+  function authValid() { return !!(BE && BE.isSignedIn()); }
   function gis() { return window.google && google.accounts && google.accounts.id ? google.accounts.id : null; }
   function whenGis(cb, tries) {
     if (gis()) return cb();
@@ -662,19 +807,23 @@
     setTimeout(function () { whenGis(cb, (tries || 0) + 1); }, 200);
   }
   function onCredential(resp) {
-    var p = decodeJwt(resp && resp.credential);
-    if (!p) { toast("Sign-in failed", "Please try again."); return; }
-    auth = { token: resp.credential, exp: p.exp, name: p.name || p.email, email: p.email, picture: p.picture || "" };
-    store.set("auth", auth); store.set("wasSignedIn", true);
-    renderAccount(); updateGate(); loadRole();
-    toast("Signed in", "Welcome, " + (auth.name || "").split(" ")[0] + "!");
+    if (!resp || !resp.credential) { toast("Sign-in failed", "Please try again."); return; }
+    BE.signInWithGoogle(resp.credential).then(function (u) {
+      auth = u;
+      renderAccount(); updateGate(); loadRole();
+      toast("Signed in", "Welcome, " + ((auth && auth.name) || "").split(" ")[0] + "!");
+      // crew-only meets you belong to appear after a refresh of the data
+      BE.load().then(function (d) { cacheSet(d); }).catch(function () {});
+    }).catch(function (e) { toast("Sign-in failed", (e && e.message) || "Please try again."); });
   }
   function signOut() {
-    auth = null; store.set("auth", null); store.set("wasSignedIn", false);
-    var g = gis(); if (g) g.disableAutoSelect();
-    renderAccount(); updateGate(); $("#acct-menu").hidden = true;
-    ROLE = { admin: false, trusted: false }; $("#acct-admin").hidden = true; document.body.classList.remove("is-admin");
-    toast("Signed out");
+    BE.signOut().then(function () {
+      auth = null;
+      var g = gis(); if (g) g.disableAutoSelect();
+      renderAccount(); updateGate(); $("#acct-menu").hidden = true;
+      ROLE = { admin: false, trusted: false }; $("#acct-admin").hidden = true; document.body.classList.remove("is-admin");
+      toast("Signed out");
+    });
   }
   function renderGisButton(el, wide) {
     whenGis(function () {
@@ -686,15 +835,13 @@
     var box = $("#account"); if (!AUTH_ON) { box.hidden = true; return; }
     box.hidden = false;
     var btn = $("#acct-btn");
-    if (authValid() || (auth && auth.email)) {
+    if (authValid() && auth) {
       btn.innerHTML = auth.picture ? "<img src='" + esc(auth.picture) + "' alt='' referrerpolicy='no-referrer'>" : "<b>" + esc(initials(auth.name || "?")) + "</b>";
       btn.title = auth.email;
       $("#acct-name").textContent = auth.name || "";
       $("#acct-email").textContent = auth.email || "";
       $("#acct-in").hidden = false; $("#acct-out").hidden = true;
-      var expired = !authValid();
-      $("#acct-expired").hidden = !expired;
-      if (expired) renderGisButton($("#gsi-reauth-btn"), true);
+      $("#acct-expired").hidden = true;
     } else {
       btn.innerHTML = "<svg viewBox='0 0 24 24'><path d='M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.4 0-9 2.2-9 5v3h18v-3c0-2.8-4.6-5-9-5Z'/></svg>";
       btn.title = "Sign in";
@@ -716,25 +863,32 @@
     var list = $("#acct-posts");
     if (!authValid()) { list.innerHTML = "<li class='muted'>Session expired — sign in again to see your posts.</li>"; return; }
     list.innerHTML = "<li class='muted'>Loading…</li>";
-    fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "mine", idToken: auth.token }) })
-      .then(function (r) { return r.json(); })
+    BE.call({ action: "mine" })
       .then(function (res) {
-        if (res.auth) { list.innerHTML = "<li class='muted'>Session expired — sign in again.</li>"; auth.token = ""; store.set("auth", auth); return; }
+        if (res.auth) { list.innerHTML = "<li class='muted'>Please sign in again.</li>"; return; }
         var items = res.items || [];
         list.innerHTML = items.length ? items.map(function (it) {
-          return "<li" + (it.approved && it.kind === "meet" && eventById[it.id] ? " data-goto-meet='" + esc(it.id) + "'" : it.approved && crewById[it.id] ? " data-goto-crew='" + esc(it.id) + "'" : "") + ">" +
-            "<span class='tag " + (it.approved ? "tag-live" : "tag-sample") + "'>" + (it.archived ? "Archived" : it.approved ? "Live" : "Pending") + "</span>" +
-            esc(it.label) + " <span class='muted'>· " + esc(it.kind) + "</span></li>";
+          var go = it.approved && it.kind === "meet" && eventById[it.id] ? " data-goto-meet='" + esc(it.id) + "'"
+                 : it.approved && it.kind === "crew" && crewById[it.id] ? " data-goto-crew='" + esc(it.id) + "'"
+                 : it.approved && it.kind === "place" && placeById[it.id] ? " data-goto-place='" + esc(it.id) + "'" : "";
+          return "<li class='my-post'><div class='mp-main'" + go + ">" +
+            "<span class='tag " + (it.approved ? "tag-live" : it.flagged ? "tag-flagged" : "tag-sample") + "'" +
+            (it.flagged ? " title='Hidden after reports — the admin will check it'" : "") + ">" +
+            (it.archived ? "Archived" : it.approved ? "Live" : it.flagged ? "Under review" : "Pending") + "</span>" +
+            esc(it.label) + " <span class='muted'>· " + esc(KIND_NAME[it.kind] || it.kind) + "</span></div>" +
+            "<div class='mp-btns'><button class='btn sm' data-edit='" + esc(it.id) + "' data-kind='" + esc(it.kind) + "'>Edit</button>" +
+            "<button class='btn sm btn-danger' data-del='" + esc(it.id) + "' data-kind='" + esc(it.kind) + "'>Delete</button></div></li>";
         }).join("") : "<li class='muted'>No posts yet. Tap + to add a meet or your crew.</li>";
       }).catch(function () { list.innerHTML = "<li class='muted'>Couldn't load your posts.</li>"; });
   }
   if (AUTH_ON) {
-    whenGis(function () {
-      gis().initialize({ client_id: CLIENT_ID, callback: onCredential, auto_select: true, cancel_on_tap_outside: true, use_fedcm_for_prompt: true });
-      // Returning users get signed back in quietly when their 1-hour token has expired.
-      if (!authValid() && store.get("wasSignedIn", false)) gis().prompt();
-      renderAccount(); updateGate();
+    BE.googleNonce().then(function (nonce) {
+      whenGis(function () {
+        gis().initialize({ client_id: CLIENT_ID, callback: onCredential, nonce: nonce, auto_select: false, cancel_on_tap_outside: true });
+        renderAccount(); updateGate();
+      });
     });
+    BE.onAuthChange(function () { auth = BE.user(); renderAccount(); updateGate(); });
     $("#acct-btn").onclick = function (e) {
       e.stopPropagation();
       var m = $("#acct-menu"); m.hidden = !m.hidden;
@@ -747,11 +901,7 @@
 
   /* ---------------- admin tools (Users tab → tick "admin") ---------------- */
   var ROLE = { admin: false, trusted: false };
-  function api(body) {
-    body.idToken = auth && auth.token;
-    return fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) })
-      .then(function (r) { return r.json(); });
-  }
+  function api(body) { return BE.call(body); }
   function loadRole() {
     if (!AUTH_ON || !authValid()) { ROLE = { admin: false, trusted: false }; $("#acct-admin").hidden = true; return; }
     api({ action: "whoami" }).then(function (r) {
@@ -761,22 +911,53 @@
       if (ROLE.admin) document.body.classList.add("is-admin");
     }).catch(function () {});
   }
+  // "⚑ Report" at the bottom of a popup (not for your own posts / data-file entries)
+  function reportLink(k, item, label) {
+    if (item._src !== "sheet") return "";
+    return "<div class='report-row' data-report-box><a href='#' data-report='" + esc(item.id) + "' data-kind='" + k + "'>⚑ Report" +
+      (label ? " " + esc(label) : "") + "</a></div>";
+  }
+  var REPORT_REASONS = ["Fake / spam", "Wrong info or location", "Offensive", "Already over / closed"];
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest("[data-report]");
+    if (a) {
+      e.preventDefault(); e.stopPropagation();
+      if (!authValid()) { toast("Sign in to report", "Tap the account button at the top right."); return; }
+      var box = a.closest("[data-report-box]");
+      box.innerHTML = "<span class='muted small'>What's wrong?</span>" + REPORT_REASONS.map(function (r) {
+        return "<button class='btn sm' data-report-send='" + esc(a.dataset.report) + "' data-kind='" + esc(a.dataset.kind) + "' data-reason='" + esc(r) + "'>" + esc(r) + "</button>";
+      }).join("");
+      return;
+    }
+    var b = e.target.closest("[data-report-send]"); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    var row = b.closest("[data-report-box]");
+    $$("button", row).forEach(function (x) { x.disabled = true; });
+    api({ action: "report", kind: b.dataset.kind, id: b.dataset.reportSend, reason: b.dataset.reason }).then(function (r) {
+      if (r.auth) throw new Error("Please sign in again.");
+      if (!r.ok) throw new Error(r.error);
+      row.innerHTML = "<span class='muted small'>Reported — thanks. If others report it too, it's hidden until the admin checks.</span>";
+    }).catch(function (err) {
+      row.innerHTML = "<span class='muted small'>" + esc(err.message || "Couldn't send the report.") + "</span>";
+    });
+  });
+
   function adminButtons(k, item) {
     if (!ROLE.admin) return "";
     if (item._src !== "sheet") return "<div class='admin-row muted'>Admin: this " + k + " is in the site's data files — edit it on GitHub.</div>";
     return "<div class='admin-row'><span>Admin</span>" +
-      (k === "meet" ? "<button class='btn sm btn-accent' data-admin-edit='" + esc(item.id) + "'>Edit</button>" : "") +
+      "<button class='btn sm btn-accent' data-edit='" + esc(item.id) + "' data-kind='" + k + "'>Edit</button>" +
       "<button class='btn sm' data-admin-act='admin_archive' data-kind='" + k + "' data-id='" + esc(item.id) + "' data-label='" + esc(item.name || item.title) + "'>Archive</button>" +
       "<button class='btn sm btn-danger' data-admin-act='admin_delete' data-kind='" + k + "' data-id='" + esc(item.id) + "' data-label='" + esc(item.name || item.title) + "'>Delete</button></div>";
   }
-  var adminDirty = false, adminTab = "pending", adminItems = [];
+  var adminDirty = false, adminTab = "pending", adminKind = "all", adminItems = [];
   function adminDo(btn) {
     var act = btn.dataset.adminAct, label = btn.dataset.label || btn.dataset.id;
     if (act === "admin_delete" && !window.confirm("Permanently delete “" + label + "”? This can't be undone.\n(Tip: Archive hides it but keeps it.)")) return;
     btn.disabled = true;
     api({ action: act, kind: btn.dataset.kind, id: btn.dataset.id }).then(function (r) {
       if (!r.ok) throw new Error(r.error || "Failed");
-      var verb = { admin_approve: "Approved", admin_archive: "Archived", admin_restore: "Restored", admin_delete: "Deleted" }[act];
+      var verb = { admin_approve: "Approved", admin_archive: "Archived", admin_restore: "Restored", admin_delete: "Deleted", admin_reviewed: "Marked as reviewed" }[act];
       toast(verb + ": " + label);
       adminDirty = true;
       if (!$("#admin-panel").hidden) loadAdmin();
@@ -793,32 +974,48 @@
     }).catch(function (e) { list.innerHTML = "<li class='muted'>Couldn't load: " + esc(e.message || "") + "</li>"; });
   }
   function renderAdmin() {
-    var counts = { pending: 0, live: 0, archived: 0 };
+    var counts = { pending: 0, flagged: 0, live: 0, archived: 0 };
     adminItems.forEach(function (i) { counts[i.status]++; });
     $$("#admin-tabs .chip").forEach(function (c) {
       c.classList.toggle("active", c.dataset.t === adminTab);
       c.querySelector("b").textContent = counts[c.dataset.t] || 0;
     });
-    var items = adminItems.filter(function (i) { return i.status === adminTab; });
+    // second row: what kind of post (counts are for the selected status)
+    var inTab = adminItems.filter(function (i) { return i.status === adminTab; });
+    var kc = { all: inTab.length, meet: 0, crew: 0, place: 0, edited: 0 };
+    inTab.forEach(function (i) { kc[i.kind]++; if (i.edited) kc.edited++; });
+    if (adminKind !== "all" && !kc[adminKind]) adminKind = "all";
+    $$("#admin-kinds .chip").forEach(function (c) {
+      var k = c.dataset.k;
+      c.classList.toggle("active", k === adminKind);
+      c.querySelector("b").textContent = kc[k];
+      c.hidden = k === "edited" && !kc.edited;
+    });
+    var items = inTab.filter(function (i) { return adminKind === "all" || (adminKind === "edited" ? !!i.edited : i.kind === adminKind); });
     $("#admin-list").innerHTML = items.length ? items.map(function (i) {
       var btns = [];
       if (i.status === "pending") btns.push(["admin_approve", "Approve", "btn-accent"], ["admin_archive", "Archive", ""]);
       if (i.status === "live") btns.push(["admin_archive", "Archive", ""]);
       if (i.status === "archived") btns.push(["admin_restore", "Restore", ""]);
+      if (i.status === "flagged") btns.push(["admin_restore", "Keep it", "btn-accent"], ["admin_archive", "Take down", ""]);
       btns.push(["admin_delete", "Delete", "btn-danger"]);
-      var editBtn = i.kind !== "meet" ? "" : i.status === "archived"
-        ? "<button class='btn sm btn-accent' data-admin-edit='" + esc(i.id) + "' data-repost='1' title='Change the date and put it back on the map'>Repost…</button>"
-        : "<button class='btn sm' data-admin-edit='" + esc(i.id) + "'>Edit</button>";
+      var editBtn = (i.kind === "meet" && i.status === "archived")
+        ? "<button class='btn sm btn-accent' data-edit='" + esc(i.id) + "' data-kind='meet' data-repost='1' title='Change the date and put it back on the map'>Repost…</button>"
+        : "<button class='btn sm' data-edit='" + esc(i.id) + "' data-kind='" + esc(i.kind) + "'>Edit</button>";
+      if (i.edited && i.status === "live") btns.unshift(["admin_reviewed", "Looks OK", ""]);
       var when = i.kind === "meet" && i.start ? (function () { var d = parseDate(i.start); return d ? fmtFull.format(d) : i.start; })() : "";
       return "<li class='admin-item'>" +
-        "<div class='ai-main'><span class='tag tag-type'>" + esc(i.kind) + "</span><b>" + esc(i.label) + "</b>" +
+        "<div class='ai-main'><span class='tag tag-type'>" + esc(KIND_NAME[i.kind] || i.kind) + "</span>" +
+        (i.edited ? "<span class='tag tag-edited' title='Changed by the poster'>Edited " + esc(i.edited) + "</span>" : "") + "<b>" + esc(i.label) + "</b>" +
+        (i.reports && i.reports.length ? "<div class='ai-reports'>⚑ " + i.reports.length + " report" + (i.reports.length > 1 ? "s" : "") + ": " +
+          esc(i.reports.join(" · ")) + "</div>" : "") +
         "<div class='muted'>" + esc([when, i.where].filter(Boolean).join(" · ")) + "</div>" +
         "<div class='muted small'>by " + esc(i.by || "—") + " · " + esc(i.submitted_at) +
         (i.lat !== "" && i.lat != null ? " · <a href='https://www.google.com/maps?q=" + esc(i.lat) + "," + esc(i.lng) + "' target='_blank' rel='noopener'>map</a>" : "") + "</div></div>" +
         "<div class='ai-btns'>" + editBtn + btns.map(function (b) {
           return "<button class='btn sm " + b[2] + "' data-admin-act='" + b[0] + "' data-kind='" + esc(i.kind) + "' data-id='" + esc(i.id) + "' data-label='" + esc(i.label) + "'>" + b[1] + "</button>";
         }).join("") + "</div></li>";
-    }).join("") : "<li class='muted'>Nothing " + adminTab + ".</li>";
+    }).join("") : "<li class='muted'>Nothing " + adminTab + (adminKind === "all" ? "" : " here") + ".</li>";
   }
   function openAdmin() {
     $("#acct-menu").hidden = true;
@@ -834,6 +1031,7 @@
     $$("[data-admin-close]").forEach(function (b) { b.onclick = closeAdmin; });
     $("#admin-panel").addEventListener("click", function (e) { if (e.target.id === "admin-panel") closeAdmin(); });
     $$("#admin-tabs .chip").forEach(function (c) { c.onclick = function () { adminTab = c.dataset.t; renderAdmin(); }; });
+    $$("#admin-kinds .chip").forEach(function (c) { c.onclick = function () { adminKind = c.dataset.k; renderAdmin(); }; });
     document.addEventListener("click", function (e) {
       var b = e.target.closest("[data-admin-act]"); if (!b) return;
       e.preventDefault(); e.stopPropagation(); adminDo(b);
@@ -846,10 +1044,10 @@
   $("#host-select").innerHTML = "<option value=''>— Open / independent —</option>" +
     CREWS.map(function (c) { return "<option value='" + esc(c.id) + "'>" + esc(c.name) + "</option>"; }).join("");
 
-  function openModal() { if (editing) { editing = null; form.reset(); picked = null; $("#pick-coords").textContent = "No location yet"; } setFormMode(false); modal.hidden = false; updateGate(); resetDates(); }
+  function openModal() { if (editing) { editing = null; form.reset(); renderTagChips(); picked = null; $("#pick-coords").textContent = "No location yet"; } setFormMode(false); modal.hidden = false; updateGate(); resetDates(); }
   function closeModal() {
     if (editing && adminDirty) { setTimeout(function () { location.reload(); }, 300); }
-    modal.hidden = true; modal.classList.remove("picking"); $("#pick-hint").hidden = true;
+    modal.hidden = true; modal.classList.remove("picking"); $("#pick-hint").hidden = true; map.off("click", onPick);
     map.getContainer().classList.remove("picking-map");
     if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; }
   }
@@ -859,56 +1057,61 @@
   document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !modal.hidden) closeModal(); });
 
   $$(".seg-btn").forEach(function (b) {
-    b.onclick = function () {
-      kind = b.dataset.kind;
-      $$(".seg-btn").forEach(function (x) { x.classList.toggle("active", x === b); });
-      $(".kind-meet").hidden = kind !== "meet";
-      $(".kind-crew").hidden = kind !== "crew";
-      $("#out").hidden = true;
-    };
+    b.onclick = function () { showKind(b.dataset.kind); $("#out").hidden = true; };
   });
 
-  /* ---------------- admin: edit a meet (reuses the submit form) ---------------- */
-  var editing = null; // { id } while editing an existing meet
-  function setFormMode(edit) {
-    $("#modal-title").textContent = edit ? "Edit meet" : "Put it on the map";
+  /* ---------------- edit a post (poster or admin; reuses the submit form) ---------------- */
+  var editing = null; // { kind, id, repost } while editing an existing post
+  var KIND_NAME = { meet: "meet", crew: "crew", place: "shop" };
+  function setFormMode(edit, k) {
+    $("#modal-title").textContent = edit ? "Edit " + KIND_NAME[k || "meet"] : "Put it on the map";
     $(".seg").hidden = !!edit;
-    $$(".only-sheet").forEach(function (el) { el.hidden = !!edit || !API; });
+    $$(".only-sheet").forEach(function (el) { el.hidden = true; });
     $("#submit-go").textContent = edit ? "Save changes" : (API ? "Submit for approval" : "Generate entry");
   }
-  function findMeetForEdit(id) {
-    var e = eventById[id];
-    if (e) return { id: e.id, title: e.title, type: e.type, host: e.host, start: e.start, end: e.end || "",
-                    place: e.place, details: e.details, link: e.link, coords: e.coords };
-    var i = adminItems.filter(function (x) { return x.kind === "meet" && x.id === id; })[0];
-    if (i) return { id: i.id, title: i.label, type: i.type, host: i.host, start: i.start, end: i.end || "",
-                    place: i.where, details: i.details, link: i.link, coords: [Number(i.lat), Number(i.lng)] };
-    return null;
+  function showKind(k) {
+    kind = k;
+    $$(".seg-btn").forEach(function (x) { x.classList.toggle("active", x.dataset.kind === k); });
+    $(".kind-meet").hidden = k !== "meet"; $(".kind-crew").hidden = k !== "crew"; $(".kind-place").hidden = k !== "place";
   }
-  function openEdit(id, repost) {
-    var m = findMeetForEdit(id);
-    if (!m) { toast("Couldn't find that meet", "Refresh and try again."); return; }
+  function openEdit(k, id, repost) {
+    if (!authValid()) { toast("Please sign in again"); return; }
+    $("#acct-menu").hidden = true;
     if (!$("#admin-panel").hidden) $("#admin-panel").hidden = true; // keep adminDirty so the map refreshes after
     map.closePopup();
+    toast("Opening…", "", 1200);
+    api({ action: "get", kind: k, id: id }).then(function (r) {
+      if (!r.ok) throw new Error(r.error || "Couldn't load it");
+      fillEdit(r.item, !!repost);
+    }).catch(function (e) { toast("Couldn't open that post", e.message); });
+  }
+  function fillEdit(m, repost) {
     form.reset(); $("#out").hidden = true;
-    editing = { id: m.id, repost: !!repost };
-    kind = "meet";
-    $$(".seg-btn").forEach(function (x) { x.classList.toggle("active", x.dataset.kind === "meet"); });
-    $(".kind-meet").hidden = false; $(".kind-crew").hidden = true;
-    setFormMode(true);
-    var hostSel = $("#host-select");
-    if (m.host && !hostSel.querySelector("option[value='" + m.host.replace(/'/g, "") + "']")) {
-      var o = document.createElement("option"); o.value = m.host; o.textContent = m.host; hostSel.appendChild(o);
-    }
+    editing = { kind: m.kind, id: m.id, repost: repost };
+    showKind(m.kind);
+    setFormMode(true, m.kind);
     var set = function (n, v) { var el = form.elements[n]; if (el) el.value = v == null ? "" : v; };
-    set("title", m.title); set("type", m.type || "meet"); set("host", m.host || "");
-    set("start_date", (m.start || "").slice(0, 10)); set("start_time", (m.start || "").slice(11, 16));
-    set("end_date", (m.end || "").slice(0, 10)); set("end_time", (m.end || "").slice(11, 16));
-    set("place", m.place); set("details", m.details); set("link", m.link);
-    $$("#submit-form input[type=date]").forEach(function (d) { d.min = ""; }); // past/ongoing meets are editable
-    picked = (m.coords && isFinite(m.coords[0])) ? [m.coords[0], m.coords[1]] : null;
+    if (m.kind === "meet") {
+      var hostSel = $("#host-select");
+      if (m.host && !hostSel.querySelector("option[value='" + m.host.replace(/'/g, "") + "']")) {
+        var o = document.createElement("option"); o.value = m.host; o.textContent = m.host; hostSel.appendChild(o);
+      }
+      set("title", m.title); set("type", m.type || "meet"); set("host", m.host || "");
+      set("start_date", (m.start || "").slice(0, 10)); set("start_time", (m.start || "").slice(11, 16));
+      set("end_date", (m.end || "").slice(0, 10)); set("end_time", (m.end || "").slice(11, 16));
+      set("place", m.place); set("details", m.details); set("link", m.link);
+      $$("#submit-form input[type=date]").forEach(function (d) { d.min = ""; }); // past/ongoing meets are editable
+    } else if (m.kind === "crew") {
+      set("name", m.name); set("area", m.area); set("color", m.color || "#ff3b3b"); set("radius", m.radius || 3);
+      set("logo", (m.logo || "").replace(/^club_logos\//, "")); set("pagelink", m.link); set("tags", m.tags);
+    } else {
+      set("pname", m.name); set("pcategory", m.category || "mechanic"); renderTagChips();
+      $$("#ptag-chips input").forEach(function (i) { i.checked = (m.tags || []).indexOf(i.value) > -1; });
+      set("parea", m.area); set("hours", m.hours); set("phone", m.phone); set("plink", m.link); set("pdetails", m.details);
+    }
+    picked = (m.coords && isFinite(m.coords[0]) && m.coords[0] !== null) ? [m.coords[0], m.coords[1]] : null;
+    if (picked) setPin(picked);
     $("#pick-coords").textContent = picked ? picked.join(", ") + " (tap 📍 to move)" : "No location yet";
-    if (picked) { if (pickMarker) pickMarker.setLatLng(picked); else pickMarker = L.marker(picked).addTo(map); }
     if (repost) {
       $("#modal-title").textContent = "Repost meet";
       $("#submit-go").textContent = "Repost";
@@ -925,33 +1128,118 @@
     modal.hidden = false; updateGate(); updateDtHint();
   }
   document.addEventListener("click", function (e) {
-    var b = e.target.closest("[data-admin-edit]"); if (!b) return;
+    var b = e.target.closest("[data-edit]"); if (!b) return;
     e.preventDefault(); e.stopPropagation();
-    if (!ROLE.admin) return;
-    openEdit(b.dataset.adminEdit, b.dataset.repost === "1");
+    openEdit(b.dataset.kind || "meet", b.dataset.edit, b.dataset.repost === "1");
+  });
+  // Delete your own post: tap once, then tap again to confirm.
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-del]"); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (!b.classList.contains("confirm")) {
+      b.classList.add("confirm"); b.dataset.txt = b.textContent; b.textContent = "Tap again to delete";
+      setTimeout(function () { if (b.isConnected) { b.classList.remove("confirm"); b.textContent = b.dataset.txt; } }, 4000);
+      return;
+    }
+    b.disabled = true; b.textContent = "Deleting…";
+    api({ action: "delete", kind: b.dataset.kind, id: b.dataset.del }).then(function (r) {
+      if (!r.ok) throw new Error(r.error || "Couldn't delete");
+      toast("Deleted", "Refreshing the map…", 2500);
+      setTimeout(function () { location.reload(); }, 1200);
+    }).catch(function (err) { b.disabled = false; b.classList.remove("confirm"); b.textContent = b.dataset.txt; toast("Couldn't delete", err.message); });
   });
 
+  // Picking a spot: tap the map, drag the pin, search a place/address, paste
+  // coordinates or a Google Maps link, or use the phone's GPS.
+  var pickBefore = null;
+  function setPin(ll, fly) {
+    picked = [+(+ll[0]).toFixed(6), +(+ll[1]).toFixed(6)];
+    if (pickMarker) pickMarker.setLatLng(picked);
+    else {
+      pickMarker = L.marker(picked, { draggable: true }).addTo(map);
+      pickMarker.on("dragend", function () { var p = pickMarker.getLatLng(); setPin([p.lat, p.lng]); });
+    }
+    $("#pick-coords").textContent = picked.join(", ");
+    if (fly) map.flyTo(picked, Math.max(map.getZoom(), 17));
+    $("#pick-done").hidden = false;
+    $("#pick-msg").textContent = "Pin set — drag it or tap the map to adjust";
+  }
   function startPick() {
+    pickBefore = picked ? picked.slice() : null;
     modal.classList.add("picking"); $("#pick-hint").hidden = false;
+    $("#pick-done").hidden = !picked; $("#pick-results").hidden = true; $("#pick-q").value = "";
+    $("#pick-msg").textContent = picked ? "Drag the pin or tap the map to move it" : "Search above, or tap the map to drop the pin";
     map.getContainer().classList.add("picking-map");
-    map.once("click", onPick);
+    map.on("click", onPick);
   }
-  function onPick(e) {
-      map.closePopup();
-      picked = [+e.latlng.lat.toFixed(6), +e.latlng.lng.toFixed(6)];
-      if (pickMarker) pickMarker.setLatLng(picked);
-      else pickMarker = L.marker(picked).addTo(map);
-      $("#pick-coords").textContent = picked.join(", ");
-      endPick();
-  }
+  function onPick(e) { map.closePopup(); setPin([e.latlng.lat, e.latlng.lng]); }
   function endPick() {
+    map.off("click", onPick);
     modal.classList.remove("picking"); $("#pick-hint").hidden = true;
     map.getContainer().classList.remove("picking-map");
   }
+  // Coordinates or a Google Maps URL pasted in the box.
+  function parseCoords(q) {
+    var m = q.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || q.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) ||
+            q.match(/(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/);
+    if (!m) return null;
+    var lat = +m[1], lng = +m[2];
+    return (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) ? [lat, lng] : null;
+  }
+  function pickSearch() {
+    var q = $("#pick-q").value.trim(), box = $("#pick-results");
+    if (q.length < 2) return;
+    var c = parseCoords(q);
+    if (c) { box.hidden = true; setPin(c, true); return; }
+    if (/goo\.gl|maps\.app/.test(q)) {
+      $("#pick-msg").textContent = "Short Google links can't be read. In Google Maps, long-press the spot and copy the numbers (e.g. 14.5547, 121.0244) instead.";
+      return;
+    }
+    $("#pick-msg").textContent = "Searching…";
+    geocode(q, function (res) {
+      if (res === null) { $("#pick-msg").textContent = "Search is busy — try again in a second."; return; }
+      if (!res.length) { box.hidden = true; $("#pick-msg").textContent = "Nothing found. Try a street, barangay, mall or landmark nearby, then tap the map."; return; }
+      box.innerHTML = "";
+      res.forEach(function (p) {
+        var parts = p.display_name.split(","), b = document.createElement("button");
+        b.type = "button";
+        b.innerHTML = "<b>" + esc(parts[0]) + "</b><span>" + esc(parts.slice(1, 4).join(",").trim()) + "</span>";
+        b.onclick = function () { box.hidden = true; setPin([+p.lat, +p.lon], true); };
+        box.appendChild(b);
+      });
+      box.hidden = false;
+      $("#pick-msg").textContent = "Pick a result, then fine-tune the pin";
+    });
+  }
+  $("#pick-go").onclick = pickSearch;
+  $("#pick-q").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); pickSearch(); } });
+  $("#pick-here").onclick = function () {
+    if (!navigator.geolocation) return;
+    $("#pick-msg").textContent = "Finding you…";
+    navigator.geolocation.getCurrentPosition(function (pos) { setPin([pos.coords.latitude, pos.coords.longitude], true); },
+      function () { $("#pick-msg").textContent = "Couldn't get your location — allow location access, or search instead."; },
+      { enableHighAccuracy: true, timeout: 10000 });
+  };
   $("#btn-pick").onclick = startPick;
-  $("#pick-cancel").onclick = function () { map.off("click", onPick); endPick(); };
+  $("#pick-done").onclick = endPick;
+  $("#pick-cancel").onclick = function () {
+    if (pickBefore) setPin(pickBefore);
+    else { picked = null; if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; } $("#pick-coords").textContent = "No location yet"; }
+    endPick();
+  };
 
   function slug(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "entry"; }
+  $("#pcategory").innerHTML = Object.keys(PLACE_CATS).map(function (k) { return "<option value='" + k + "'>" + esc(PLACE_CATS[k].label) + "</option>"; }).join("");
+  function renderTagChips() {
+    var cat = $("#pcategory").value, keep = {};
+    $$("#ptag-chips input:checked").forEach(function (i) { keep[i.value] = 1; });
+    var tags = TAGS_BY_CAT[cat] || PLACE_TAGS;
+    $("#ptag-chips").innerHTML = tags.map(function (t) {
+      return "<label class='chip chip-check'><input type='checkbox' name='ptag' value='" + esc(t) + "'" + (keep[t] ? " checked" : "") + "><span>" + esc(t) + "</span></label>"; }).join("");
+  }
+  $("#pcategory").addEventListener("change", renderTagChips);
+  renderTagChips();
+
   /* ---------------- date / time pickers ---------------- */
   function pad2(n) { return String(n).padStart(2, "0"); }
   function phTodayISO() { // today's date in Manila time, YYYY-MM-DD
@@ -1000,7 +1288,7 @@
   var sending = false;
   if (API) {
     $("#submit-go").textContent = "Submit for approval";
-    $$(".only-sheet").forEach(function (el) { el.hidden = false; });
+    $$(".only-sheet").forEach(function (el) { el.hidden = true; });
   }
   form.addEventListener("submit", function (ev) {
     ev.preventDefault();
@@ -1009,19 +1297,32 @@
     if (!picked) { toast("Pick a location first", "Tap “📍 Pick location on map”."); return; }
     if (kind === "meet" && (!f.title || !f.start)) { toast("Meet name, start date and start time are required"); return; }
     if (kind === "crew" && !f.name) { toast("Crew name is required"); return; }
+    if (kind === "place" && !f.pname) { toast("Shop / place name is required"); return; }
+    if (kind === "place" && !API) { toast("Shops need the database", "Set supabaseUrl / supabaseKey in js/config.js."); return; }
 
     var logo = (f.logo || "").trim();
     var logoPath = /^https?:\/\//i.test(logo) ? logo : (logo ? "club_logos/" + logo : "");
 
-    // ---- Admin edit: save changes to an existing meet ----
+    function payloadFor(k) {
+      var pl = k === "meet"
+        ? { kind: "meet", title: f.title, type: f.type, host: f.host, start: f.start, end: f.end, place: f.place, details: f.details, link: f.link }
+        : k === "place"
+        ? { kind: "place", name: f.pname, category: f.pcategory, area: f.parea, tags: new FormData(form).getAll("ptag").join(", "),
+            hours: f.hours, phone: f.phone, link: f.plink, details: f.pdetails }
+        : { kind: "crew", name: f.name, area: f.area, color: f.color, radius: f.radius, logo: logoPath, link: f.pagelink, tags: f.tags };
+      pl.lat = picked[0]; pl.lng = picked[1];
+      return pl;
+    }
+
+    // ---- Edit: save changes to an existing post (yours, or any if you're the admin) ----
     if (editing && API) {
       if (sending) return;
       sending = true;
       var sbtn = $("#submit-go"); sbtn.disabled = true; sbtn.textContent = "Saving…";
-      api({ action: "admin_update", kind: "meet", id: editing.id, title: f.title, type: f.type, host: f.host,
-            start: f.start, end: f.end, place: f.place, details: f.details, link: f.link, lat: picked[0], lng: picked[1] })
+      var up = payloadFor(editing.kind); up.action = "update"; up.id = editing.id;
+      api(up)
         .then(function (r) {
-          if (r.auth) { auth.token = ""; store.set("auth", auth); updateGate(); throw new Error("Your session expired — sign in again."); }
+          if (r.auth) { updateGate(); throw new Error("Please sign in again."); }
           if (!r.ok) throw new Error(r.error || "Couldn't save");
           if (editing.repost) return api({ action: "admin_restore", kind: "meet", id: editing.id }).then(function (r2) {
             if (!r2.ok) throw new Error(r2.error || "Saved, but couldn't put it back on the map");
@@ -1043,21 +1344,16 @@
       if (sending) return;
       sending = true;
       var btn = $("#submit-go"); btn.disabled = true; btn.textContent = "Sending…";
-      var payload = kind === "meet"
-        ? { kind: "meet", title: f.title, type: f.type, host: f.host, start: f.start, end: f.end, place: f.place, details: f.details, link: f.link }
-        : { kind: "crew", name: f.name, area: f.area, color: f.color, radius: f.radius, logo: logoPath, link: f.pagelink, tags: f.tags };
-      payload.lat = picked[0]; payload.lng = picked[1]; payload.contact = f.contact; payload.website = f.website;
-      payload.action = "submit"; if (AUTH_ON) payload.idToken = auth && auth.token;
+      var payload = payloadFor(kind); payload.contact = f.contact; payload.website = f.website;
+      payload.action = "submit";
       if (AUTH_ON && !authValid()) { sending = false; btn.disabled = false; btn.textContent = "Submit for approval"; updateGate(); toast("Please sign in again", "Your session expired."); return; }
-      // text/plain body = no CORS preflight, which Apps Script can't answer
-      fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) })
-        .then(function (r) { return r.json(); })
+      BE.call(payload)
         .then(function (res) {
-          if (res.auth) { auth.token = ""; store.set("auth", auth); updateGate(); throw new Error("Your session expired — sign in again."); }
+          if (res.auth) { updateGate(); throw new Error("Please sign in again."); }
           if (!res.ok) throw new Error(res.error || "Couldn't send");
           closeModal(); form.reset(); picked = null; $("#pick-coords").textContent = "No location yet"; $("#dt-hint").textContent = "";
           if (res.live) { toast("Posted — it's live ✅", "Refreshing the map…", 4000); setTimeout(function () { location.reload(); }, 1800); }
-          else toast("Sent for approval ✅", (kind === "meet" ? "Your meet" : "Your crew") + " will show on the map once an admin approves it. Check “My posts” under your account.", 7000);
+          else toast("Sent for approval ✅", ({ meet: "Your meet", crew: "Your crew", place: "The shop" }[kind]) + " will show on the map once an admin approves it. Check “My posts” under your account.", 7000);
         })
         .catch(function (err) { toast("Couldn't send", (err && err.message && err.message !== "Failed to fetch") ? err.message : "Check your connection and try again."); })
         .then(function () { sending = false; btn.disabled = false; btn.textContent = "Submit for approval"; });
@@ -1091,6 +1387,7 @@
   /* ---------------- boot ---------------- */
   renderMeets();
   renderCrews();
+  renderPlaceFilters(); renderPlaces();
 
   var newCount = EVENTS.filter(isNew).length;
   if (newCount) { $("#new-badge").textContent = newCount + " new"; $("#new-badge").hidden = false; }
@@ -1105,10 +1402,10 @@
 
   // Deep links: #meet=id or #crew=id
   function fromHash() {
-    var m = location.hash.match(/^#(meet|crew)=(.+)$/);
+    var m = location.hash.match(/^#(meet|crew|place)=(.+)$/);
     if (!m) return;
     var id = decodeURIComponent(m[2]);
-    if (m[1] === "meet") focusMeet(id); else focusCrew(id);
+    if (m[1] === "meet") focusMeet(id); else if (m[1] === "place") focusPlace(id); else focusCrew(id);
   }
   window.addEventListener("hashchange", fromHash);
   setTimeout(fromHash, 300);

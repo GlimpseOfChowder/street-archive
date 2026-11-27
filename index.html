@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Covered+By+Your+Grace&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20261128e">
 </head>
 <body>
 
@@ -72,6 +72,7 @@
     <nav class="tabs" role="tablist">
       <button class="tab active" data-tab="meets" role="tab">Meets <span id="new-badge" class="badge" hidden></span></button>
       <button class="tab" data-tab="crews" role="tab">Crews <span id="crew-count" class="count"></span></button>
+      <button class="tab" data-tab="places" role="tab">Places <span id="place-count" class="count"></span></button>
     </nav>
 
     <section id="tab-meets" class="tab-body">
@@ -88,6 +89,12 @@
       <ul id="crew-list" class="list"></ul>
     </section>
 
+    <section id="tab-places" class="tab-body" hidden>
+      <div class="chips" id="place-filters"></div>
+      <select id="place-tag" class="tag-select" aria-label="Specialty"><option value="">All specialties</option></select>
+      <ul id="place-list" class="list"></ul>
+    </section>
+
     <footer class="panel-foot">
       <span>Turf data is community-submitted. · <a href="privacy.html" style="color:inherit">Privacy</a></span>
     </footer>
@@ -101,6 +108,9 @@
     <button id="btn-layer" class="round" title="Switch map style">
       <svg viewBox="0 0 24 24"><path d="m12 2 10 6-10 6L2 8l10-6Zm-8.3 9.9L12 17l8.3-5.1L22 13l-10 6-10-6 1.7-1.1Z"/></svg>
     </button>
+    <button id="btn-places" class="round active" title="Show / hide shops & car washes">
+      <svg viewBox="0 0 24 24"><path d="M22.7 19 13.6 9.9c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4Z"/></svg>
+    </button>
     <button id="btn-turf" class="round active" title="Show / hide turf">
       <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3Zm10 0h8v8h-8V3ZM3 13h8v8H3v-8Zm10 0h8v8h-8v-8Z" opacity=".9"/></svg>
     </button>
@@ -112,6 +122,7 @@
   <div class="legend">
     <span><i class="lg lg-turf"></i>Turf</span>
     <span><i class="lg lg-meet"></i>Meet</span>
+    <span><i class="lg lg-place"></i>Shop / wash</span>
   </div>
 
   <!-- ===== Toasts ===== -->
@@ -125,7 +136,8 @@
 
       <div class="seg">
         <button class="seg-btn active" data-kind="meet">Post a meet</button>
-        <button class="seg-btn" data-kind="crew">Claim turf (crew)</button>
+        <button class="seg-btn" data-kind="crew">Claim turf</button>
+        <button class="seg-btn" data-kind="place">Add a shop</button>
       </div>
 
       <div id="signin-gate" class="signin-gate" hidden>
@@ -175,6 +187,21 @@
           <label>Style tags (optional)<input name="tags" placeholder="JDM, Stance, Euro"></label>
         </div>
 
+        <div class="kind kind-place" hidden>
+          <label>Shop / place name<input name="pname" placeholder="e.g. JDM Garage Angeles"></label>
+          <div class="row">
+            <label>Type<select name="pcategory" id="pcategory"></select></label>
+            <label>Area<input name="parea" placeholder="City, Province"></label>
+          </div>
+          <div class="tag-pick"><span class="muted small">Specialties (tap all that apply)</span><div id="ptag-chips" class="chips"></div></div>
+          <div class="row">
+            <label>Hours<input name="hours" placeholder="Mon–Sat 8AM–6PM"></label>
+            <label>Phone<input name="phone" type="tel" placeholder="0917 123 4567"></label>
+          </div>
+          <label>FB / website<input name="plink" type="url" placeholder="https://facebook.com/…"></label>
+          <label>Details<textarea name="pdetails" rows="2" placeholder="Services, price range, by appointment…"></textarea></label>
+        </div>
+
         <label class="only-sheet" hidden>Your FB page (optional) <span class="muted">— only the admin sees this</span><input name="contact" placeholder="So we can reach you if something's unclear"></label>
         <input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
 
@@ -207,21 +234,43 @@
       <h2 id="admin-title">Admin</h2>
       <div class="chips" id="admin-tabs">
         <button class="chip active" data-t="pending">Pending <b>0</b></button>
+        <button class="chip" data-t="flagged">Reported <b>0</b></button>
         <button class="chip" data-t="live">Live <b>0</b></button>
         <button class="chip" data-t="archived">Archived <b>0</b></button>
       </div>
+      <div class="chips admin-kinds" id="admin-kinds">
+        <button class="chip active" data-k="all">All <b>0</b></button>
+        <button class="chip" data-k="meet">Meets <b>0</b></button>
+        <button class="chip" data-k="crew">Crews <b>0</b></button>
+        <button class="chip" data-k="place">Shops <b>0</b></button>
+        <button class="chip" data-k="edited">Edited <b>0</b></button>
+      </div>
       <ul id="admin-list" class="admin-list"></ul>
-      <p class="muted small">Archive hides something from the map but keeps it (restore anytime). Delete removes it from the Sheet for good. Ban accounts in the Sheet's Users tab.</p>
+      <p class="muted small">Archive hides something from the map but keeps it (restore anytime). Delete removes it for good. Rejecting a pending or reported post (Archive / Take down / Delete) gives the poster a strike, which stops their posts from skipping the queue. Posts with 3 reports are hidden and land in Reported. To ban an account, tick is_banned on their row in Supabase → Table Editor → profiles.</p>
     </div>
   </div>
 
-  <div id="pick-hint" class="pick-hint" hidden>Tap the map to drop the pin · <button id="pick-cancel">cancel</button></div>
+  <div id="pick-hint" class="pick-bar" hidden>
+    <div class="pick-search">
+      <input id="pick-q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Search a place, or paste coordinates / Maps link">
+      <button type="button" id="pick-go" class="btn btn-accent">Search</button>
+    </div>
+    <div id="pick-results" class="pick-results" hidden></div>
+    <div id="pick-msg" class="pick-msg">Search above, or tap the map to drop the pin</div>
+    <div class="pick-actions">
+      <button type="button" id="pick-here" class="btn">📍 I'm here</button>
+      <button type="button" id="pick-cancel" class="btn">Cancel</button>
+      <button type="button" id="pick-done" class="btn btn-accent" hidden>Use this spot</button>
+    </div>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="js/config.js"></script>
-  <script src="data/crews.js"></script>
-  <script src="data/events.js"></script>
-  <script src="script.js"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2.119.2/dist/umd/supabase.js"></script>
+  <script src="js/config.js?v=20261128e"></script>
+  <script src="js/backend.js?v=20261128e"></script>
+  <script src="data/crews.js?v=20261128e"></script>
+  <script src="data/events.js?v=20261128e"></script>
+  <script src="script.js?v=20261128e"></script>
 </body>
 </html>
