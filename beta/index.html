@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Covered+By+Your+Grace&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=20261128c">
+  <link rel="stylesheet" href="styles.css?v=20261128e">
 </head>
 <body>
 
@@ -234,11 +234,19 @@
       <h2 id="admin-title">Admin</h2>
       <div class="chips" id="admin-tabs">
         <button class="chip active" data-t="pending">Pending <b>0</b></button>
+        <button class="chip" data-t="flagged">Reported <b>0</b></button>
         <button class="chip" data-t="live">Live <b>0</b></button>
         <button class="chip" data-t="archived">Archived <b>0</b></button>
       </div>
+      <div class="chips admin-kinds" id="admin-kinds">
+        <button class="chip active" data-k="all">All <b>0</b></button>
+        <button class="chip" data-k="meet">Meets <b>0</b></button>
+        <button class="chip" data-k="crew">Crews <b>0</b></button>
+        <button class="chip" data-k="place">Shops <b>0</b></button>
+        <button class="chip" data-k="edited">Edited <b>0</b></button>
+      </div>
       <ul id="admin-list" class="admin-list"></ul>
-      <p class="muted small">Archive hides something from the map but keeps it (restore anytime). Delete removes it from the Sheet for good. Ban accounts in the Sheet's Users tab.</p>
+      <p class="muted small">Archive hides something from the map but keeps it (restore anytime). Delete removes it for good. Rejecting a pending or reported post (Archive / Take down / Delete) gives the poster a strike, which stops their posts from skipping the queue. Posts with 3 reports are hidden and land in Reported. To ban an account, tick is_banned on their row in Supabase → Table Editor → profiles.</p>
     </div>
   </div>
 
@@ -259,10 +267,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://unpkg.com/@supabase/supabase-js@2.119.2/dist/umd/supabase.js"></script>
-  <script src="js/config.js?v=20261128c"></script>
-  <script src="js/backend.js?v=20261128c"></script>
-  <script src="data/crews.js?v=20261128c"></script>
-  <script src="data/events.js?v=20261128c"></script>
-  <script src="script.js?v=20261128c"></script>
+  <script src="js/config.js?v=20261128e"></script>
+  <script src="js/backend.js?v=20261128e"></script>
+  <script src="data/crews.js?v=20261128e"></script>
+  <script src="data/events.js?v=20261128e"></script>
+  <script src="script.js?v=20261128e"></script>
 </body>
 </html>

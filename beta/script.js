@@ -281,6 +281,7 @@
       html += "</div>";
     }
     html += "<div class='actions'><button class='btn sm' data-share='crew=" + esc(t.crews[0].id) + "'>Share</button></div>";
+    t.crews.forEach(function (c) { html += reportLink("crew", c, t.crews.length > 1 ? c.name : ""); });
     return html + "</div>";
   }
 
@@ -339,7 +340,7 @@
     html += "<a class='btn sm' target='_blank' rel='noopener' href='https://www.google.com/maps/dir/?api=1&destination=" + dest + "'>Maps</a>";
     if (link) html += "<a class='btn sm' target='_blank' rel='noopener' href='" + esc(link) + "'>Page ↗</a>";
     html += "<button class='btn sm' data-share='place=" + esc(p.id) + "'>Share</button>";
-    return html + "</div>" + adminButtons("place", p) + "</div>";
+    return html + "</div>" + adminButtons("place", p) + reportLink("place", p) + "</div>";
   }
   function focusPlace(id) {
     var p = placeById[id], m = placeMarker[id]; if (!p) return;
@@ -415,7 +416,7 @@
     html += "<a class='btn sm' target='_blank' rel='noopener' href='https://www.google.com/maps/dir/?api=1&destination=" + dest + "'>Maps</a>";
     html += "<button class='btn sm' data-share='meet=" + esc(e.id) + "'>Share</button>";
     if (link) html += "<a class='btn sm' target='_blank' rel='noopener' href='" + esc(link) + "'>Event page ↗</a>";
-    html += "</div>" + adminButtons("meet", e) + "<div>";
+    html += "</div>" + adminButtons("meet", e) + reportLink("meet", e) + "<div>";
     return html + "</div></div>";
   }
 
@@ -871,7 +872,9 @@
                  : it.approved && it.kind === "crew" && crewById[it.id] ? " data-goto-crew='" + esc(it.id) + "'"
                  : it.approved && it.kind === "place" && placeById[it.id] ? " data-goto-place='" + esc(it.id) + "'" : "";
           return "<li class='my-post'><div class='mp-main'" + go + ">" +
-            "<span class='tag " + (it.approved ? "tag-live" : "tag-sample") + "'>" + (it.archived ? "Archived" : it.approved ? "Live" : "Pending") + "</span>" +
+            "<span class='tag " + (it.approved ? "tag-live" : it.flagged ? "tag-flagged" : "tag-sample") + "'" +
+            (it.flagged ? " title='Hidden after reports — the admin will check it'" : "") + ">" +
+            (it.archived ? "Archived" : it.approved ? "Live" : it.flagged ? "Under review" : "Pending") + "</span>" +
             esc(it.label) + " <span class='muted'>· " + esc(KIND_NAME[it.kind] || it.kind) + "</span></div>" +
             "<div class='mp-btns'><button class='btn sm' data-edit='" + esc(it.id) + "' data-kind='" + esc(it.kind) + "'>Edit</button>" +
             "<button class='btn sm btn-danger' data-del='" + esc(it.id) + "' data-kind='" + esc(it.kind) + "'>Delete</button></div></li>";
@@ -908,6 +911,37 @@
       if (ROLE.admin) document.body.classList.add("is-admin");
     }).catch(function () {});
   }
+  // "⚑ Report" at the bottom of a popup (not for your own posts / data-file entries)
+  function reportLink(k, item, label) {
+    if (item._src !== "sheet") return "";
+    return "<div class='report-row' data-report-box><a href='#' data-report='" + esc(item.id) + "' data-kind='" + k + "'>⚑ Report" +
+      (label ? " " + esc(label) : "") + "</a></div>";
+  }
+  var REPORT_REASONS = ["Fake / spam", "Wrong info or location", "Offensive", "Already over / closed"];
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest("[data-report]");
+    if (a) {
+      e.preventDefault(); e.stopPropagation();
+      if (!authValid()) { toast("Sign in to report", "Tap the account button at the top right."); return; }
+      var box = a.closest("[data-report-box]");
+      box.innerHTML = "<span class='muted small'>What's wrong?</span>" + REPORT_REASONS.map(function (r) {
+        return "<button class='btn sm' data-report-send='" + esc(a.dataset.report) + "' data-kind='" + esc(a.dataset.kind) + "' data-reason='" + esc(r) + "'>" + esc(r) + "</button>";
+      }).join("");
+      return;
+    }
+    var b = e.target.closest("[data-report-send]"); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    var row = b.closest("[data-report-box]");
+    $$("button", row).forEach(function (x) { x.disabled = true; });
+    api({ action: "report", kind: b.dataset.kind, id: b.dataset.reportSend, reason: b.dataset.reason }).then(function (r) {
+      if (r.auth) throw new Error("Please sign in again.");
+      if (!r.ok) throw new Error(r.error);
+      row.innerHTML = "<span class='muted small'>Reported — thanks. If others report it too, it's hidden until the admin checks.</span>";
+    }).catch(function (err) {
+      row.innerHTML = "<span class='muted small'>" + esc(err.message || "Couldn't send the report.") + "</span>";
+    });
+  });
+
   function adminButtons(k, item) {
     if (!ROLE.admin) return "";
     if (item._src !== "sheet") return "<div class='admin-row muted'>Admin: this " + k + " is in the site's data files — edit it on GitHub.</div>";
@@ -916,7 +950,7 @@
       "<button class='btn sm' data-admin-act='admin_archive' data-kind='" + k + "' data-id='" + esc(item.id) + "' data-label='" + esc(item.name || item.title) + "'>Archive</button>" +
       "<button class='btn sm btn-danger' data-admin-act='admin_delete' data-kind='" + k + "' data-id='" + esc(item.id) + "' data-label='" + esc(item.name || item.title) + "'>Delete</button></div>";
   }
-  var adminDirty = false, adminTab = "pending", adminItems = [];
+  var adminDirty = false, adminTab = "pending", adminKind = "all", adminItems = [];
   function adminDo(btn) {
     var act = btn.dataset.adminAct, label = btn.dataset.label || btn.dataset.id;
     if (act === "admin_delete" && !window.confirm("Permanently delete “" + label + "”? This can't be undone.\n(Tip: Archive hides it but keeps it.)")) return;
@@ -940,18 +974,30 @@
     }).catch(function (e) { list.innerHTML = "<li class='muted'>Couldn't load: " + esc(e.message || "") + "</li>"; });
   }
   function renderAdmin() {
-    var counts = { pending: 0, live: 0, archived: 0 };
+    var counts = { pending: 0, flagged: 0, live: 0, archived: 0 };
     adminItems.forEach(function (i) { counts[i.status]++; });
     $$("#admin-tabs .chip").forEach(function (c) {
       c.classList.toggle("active", c.dataset.t === adminTab);
       c.querySelector("b").textContent = counts[c.dataset.t] || 0;
     });
-    var items = adminItems.filter(function (i) { return i.status === adminTab; });
+    // second row: what kind of post (counts are for the selected status)
+    var inTab = adminItems.filter(function (i) { return i.status === adminTab; });
+    var kc = { all: inTab.length, meet: 0, crew: 0, place: 0, edited: 0 };
+    inTab.forEach(function (i) { kc[i.kind]++; if (i.edited) kc.edited++; });
+    if (adminKind !== "all" && !kc[adminKind]) adminKind = "all";
+    $$("#admin-kinds .chip").forEach(function (c) {
+      var k = c.dataset.k;
+      c.classList.toggle("active", k === adminKind);
+      c.querySelector("b").textContent = kc[k];
+      c.hidden = k === "edited" && !kc.edited;
+    });
+    var items = inTab.filter(function (i) { return adminKind === "all" || (adminKind === "edited" ? !!i.edited : i.kind === adminKind); });
     $("#admin-list").innerHTML = items.length ? items.map(function (i) {
       var btns = [];
       if (i.status === "pending") btns.push(["admin_approve", "Approve", "btn-accent"], ["admin_archive", "Archive", ""]);
       if (i.status === "live") btns.push(["admin_archive", "Archive", ""]);
       if (i.status === "archived") btns.push(["admin_restore", "Restore", ""]);
+      if (i.status === "flagged") btns.push(["admin_restore", "Keep it", "btn-accent"], ["admin_archive", "Take down", ""]);
       btns.push(["admin_delete", "Delete", "btn-danger"]);
       var editBtn = (i.kind === "meet" && i.status === "archived")
         ? "<button class='btn sm btn-accent' data-edit='" + esc(i.id) + "' data-kind='meet' data-repost='1' title='Change the date and put it back on the map'>Repost…</button>"
@@ -961,13 +1007,15 @@
       return "<li class='admin-item'>" +
         "<div class='ai-main'><span class='tag tag-type'>" + esc(KIND_NAME[i.kind] || i.kind) + "</span>" +
         (i.edited ? "<span class='tag tag-edited' title='Changed by the poster'>Edited " + esc(i.edited) + "</span>" : "") + "<b>" + esc(i.label) + "</b>" +
+        (i.reports && i.reports.length ? "<div class='ai-reports'>⚑ " + i.reports.length + " report" + (i.reports.length > 1 ? "s" : "") + ": " +
+          esc(i.reports.join(" · ")) + "</div>" : "") +
         "<div class='muted'>" + esc([when, i.where].filter(Boolean).join(" · ")) + "</div>" +
         "<div class='muted small'>by " + esc(i.by || "—") + " · " + esc(i.submitted_at) +
         (i.lat !== "" && i.lat != null ? " · <a href='https://www.google.com/maps?q=" + esc(i.lat) + "," + esc(i.lng) + "' target='_blank' rel='noopener'>map</a>" : "") + "</div></div>" +
         "<div class='ai-btns'>" + editBtn + btns.map(function (b) {
           return "<button class='btn sm " + b[2] + "' data-admin-act='" + b[0] + "' data-kind='" + esc(i.kind) + "' data-id='" + esc(i.id) + "' data-label='" + esc(i.label) + "'>" + b[1] + "</button>";
         }).join("") + "</div></li>";
-    }).join("") : "<li class='muted'>Nothing " + adminTab + ".</li>";
+    }).join("") : "<li class='muted'>Nothing " + adminTab + (adminKind === "all" ? "" : " here") + ".</li>";
   }
   function openAdmin() {
     $("#acct-menu").hidden = true;
@@ -983,6 +1031,7 @@
     $$("[data-admin-close]").forEach(function (b) { b.onclick = closeAdmin; });
     $("#admin-panel").addEventListener("click", function (e) { if (e.target.id === "admin-panel") closeAdmin(); });
     $$("#admin-tabs .chip").forEach(function (c) { c.onclick = function () { adminTab = c.dataset.t; renderAdmin(); }; });
+    $$("#admin-kinds .chip").forEach(function (c) { c.onclick = function () { adminKind = c.dataset.k; renderAdmin(); }; });
     document.addEventListener("click", function (e) {
       var b = e.target.closest("[data-admin-act]"); if (!b) return;
       e.preventDefault(); e.stopPropagation(); adminDo(b);

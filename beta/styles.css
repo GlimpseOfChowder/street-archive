@@ -353,7 +353,9 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
 .admin-item .ai-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: none; }
 .admin-item a { color: var(--acc); }
 .small { font-size: 12px; }
-#admin-tabs .chip b { margin-left: 4px; }
+#admin-tabs .chip b, #admin-kinds .chip b { margin-left: 4px; }
+.admin-kinds { margin-top: -4px; }
+.admin-kinds .chip { padding: 5px 11px; font-size: 13px; }
 
 /* ================= Boot loader / honeypot ================= */
 .boot { position: fixed; inset: 0; z-index: 5000; display: grid; place-content: center; justify-items: center; gap: 14px; background: var(--bg); transition: opacity .35s; }
@@ -392,6 +394,7 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
   .tab-body { padding: 10px 10px calc(16px + env(safe-area-inset-bottom)); }
   .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -10px 10px; padding: 0 10px; }
   .chips::-webkit-scrollbar { display: none; }
+  #admin-tabs, .admin-kinds { flex-wrap: wrap; overflow: visible; margin: 0 0 10px; padding: 0; }
   .chip { padding: 7px 13px; }
   .card { padding: 10px 10px 10px 8px; }
   .card h4 { font-size: 16px; }
@@ -421,3 +424,11 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
   .pick-bar { top: calc(8px + env(safe-area-inset-top)); }
   .pick-actions .btn { flex: 1; }
 }
+
+/* reports */
+.report-row { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+.report-row a { color: var(--muted); text-decoration: none; }
+.report-row a:hover { color: #ff8080; }
+.leaflet-container .report-row a { color: var(--muted); }
+.tag-flagged { background: rgba(255,59,59,.18); color: #ff8080; }
+.ai-reports { margin-top: 4px; font-size: 12px; color: #ff8080; }
