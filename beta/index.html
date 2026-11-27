@@ -242,7 +242,19 @@
     </div>
   </div>
 
-  <div id="pick-hint" class="pick-hint" hidden>Tap the map to drop the pin · <button id="pick-cancel">cancel</button></div>
+  <div id="pick-hint" class="pick-bar" hidden>
+    <div class="pick-search">
+      <input id="pick-q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Search a place, or paste coordinates / Maps link">
+      <button type="button" id="pick-go" class="btn btn-accent">Search</button>
+    </div>
+    <div id="pick-results" class="pick-results" hidden></div>
+    <div id="pick-msg" class="pick-msg">Search above, or tap the map to drop the pin</div>
+    <div class="pick-actions">
+      <button type="button" id="pick-here" class="btn">📍 I'm here</button>
+      <button type="button" id="pick-cancel" class="btn">Cancel</button>
+      <button type="button" id="pick-done" class="btn btn-accent" hidden>Use this spot</button>
+    </div>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>

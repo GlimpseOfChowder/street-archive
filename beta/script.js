@@ -306,7 +306,7 @@
   var TAGS_BY_CAT = {
     mechanic:  ["JDM", "Euro", "American", "Korean", "Diesel", "Tuning / ECU", "Engine", "Transmission", "Suspension",
                 "Brakes", "Bodywork / Paint", "Electrical", "Aircon", "Exhaust", "Wheels / Alignment", "Motorcycle", "24/7"],
-    carwash:   ["Ceramic coating"],
+    carwash:   ["Ceramic coating", "24/7"],
     detailing: ["Ceramic coating", "PPF", "Interior", "Bodywork / Paint", "Motorcycle"],
     tint:      ["PPF", "Ceramic coating", "Motorcycle"],
     tires:     ["Wheels / Alignment", "Brakes", "Suspension", "Motorcycle", "24/7"],

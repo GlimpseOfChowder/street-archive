@@ -14,7 +14,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overscroll-behavior-y: none; }
 button { font: inherit; color: inherit; cursor: pointer; }
 input, select, textarea { font: inherit; }
 [hidden] { display: none !important; }
@@ -91,7 +91,7 @@ input, select, textarea { font: inherit; }
 .badge { background: #ff3b3b; color: #fff; border-radius: 999px; font-size: 11px; padding: 1px 7px; margin-left: 4px; letter-spacing: 0; vertical-align: 2px; }
 .count { color: var(--muted); font-size: 13px; letter-spacing: 0; }
 
-.tab-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px; }
+.tab-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px; overscroll-behavior: contain; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .chip { white-space: nowrap; }
 .sheet-handle { display: none; }
@@ -263,11 +263,28 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
   font-size: 12px; overflow-x: auto; max-height: 220px; color: #b6f5c9;
 }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
-.pick-hint {
-  position: fixed; z-index: 3001; top: 80px; left: 50%; transform: translateX(-50%);
-  background: var(--acc); color: #000; font-weight: 700; padding: 10px 16px; border-radius: 999px;
+.pick-bar {
+  position: fixed; z-index: 3001; top: 76px; left: 50%; transform: translateX(-50%);
+  width: min(460px, calc(100% - 20px)); background: #12151d; border: 1px solid var(--acc);
+  border-radius: var(--radius); padding: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.6);
 }
-.pick-hint button { border: 0; background: none; text-decoration: underline; font-weight: 700; color: #000; }
+.pick-search { display: flex; gap: 8px; }
+.pick-search input {
+  flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--text); font-size: 16px; outline: none;
+}
+.pick-search input:focus { border-color: var(--acc); }
+.pick-results { margin-top: 8px; max-height: 40vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+.pick-results button {
+  display: block; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-bottom: 1px solid var(--line);
+  background: none; color: var(--text);
+}
+.pick-results button:last-child { border-bottom: 0; }
+.pick-results button:hover { background: rgba(255,255,255,.06); }
+.pick-results b { display: block; font-size: 14px; }
+.pick-results span { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick-msg { margin: 8px 2px; font-size: 13px; color: var(--muted); }
+.pick-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .picking-map { cursor: crosshair !important; }
 .picking-map .leaflet-interactive { pointer-events: none !important; }
 
@@ -393,5 +410,6 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
   form input, form select, form textarea { font-size: 16px; }
   .modal-actions { position: sticky; bottom: -18px; background: #12151d; padding: 10px 0; margin-bottom: -10px; }
   .modal-actions .btn { flex: 1; }
-  .pick-hint { top: auto; bottom: 24px; width: max-content; max-width: calc(100% - 24px); }
+  .pick-bar { top: calc(8px + env(safe-area-inset-top)); }
+  .pick-actions .btn { flex: 1; }
 }
