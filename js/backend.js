@@ -63,7 +63,8 @@
         sb.from("crews").select("id,name,area,color,radius_km,lat,lng,logo_url,link,tags,verified").eq("status", "live"),
         sb.from("meets").select("id,title,type,host_crew,visibility,start_at,end_at,place,lat,lng,details,link,created_by,author:created_by(display_name)").eq("status", "live"),
         sb.from("places").select("id,name,category,tags,area,lat,lng,phone,hours,link,details").eq("status", "live"),
-        sb.rpc("rsvp_counts")
+        sb.rpc("rsvp_counts"),
+        sb.from("crew_turfs").select("id,crew_id,area,lat,lng,radius_km")
       ]);
     }).then(function (res) {
       res.slice(0, 3).forEach(function (r) { if (r.error) throw r.error; });
@@ -71,6 +72,7 @@
       if (!res[3].error) (res[3].data || []).forEach(function (x) { going[x.meet_id] = Number(x.n) || 0; });
       return {
         going: going,
+        turfs: res[4] && !res[4].error ? res[4].data : [],
         crews: res[0].data.map(function (c) {
           return { id: c.id, name: c.name, area: c.area, color: c.color, radius_km: c.radius_km, lat: c.lat, lng: c.lng,
                    logo: c.logo_url, link: c.link, tags: (c.tags || []).join(", "), verified: !!c.verified };
@@ -297,6 +299,16 @@
     });
   }
 
+  /* ---------- extra turf locations (crew owners / admins) ---------- */
+  function saveTurf(d) {
+    var lat = Number(d.lat), lng = Number(d.lng);
+    if (!isFinite(lat) || !isFinite(lng)) return Promise.resolve({ ok: false, error: "Pick the location on the map." });
+    var row = { area: clean(d.area, 80), lat: lat, lng: lng, radius_km: Math.min(30, Math.max(0.5, Number(d.radius) || 3)) };
+    var q = d.id ? sb.from("crew_turfs").update(row).eq("id", d.id) : sb.from("crew_turfs").insert(Object.assign({ crew_id: d.crew_id }, row));
+    return q.select("id").then(expectOne);
+  }
+  function deleteTurf(d) { return sb.from("crew_turfs").delete().eq("id", d.id).select("id").then(expectOne); }
+
   /* ---------- feedback ---------- */
   // Works signed in or not; only the admin can read it back.
   function sendFeedback(d) {
@@ -515,6 +527,8 @@
       if (d.action === "join_requests") return joinRequests();
       if (d.action === "admin_counts") return adminCounts();
       if (d.action === "feedback_list") return feedbackList();
+      if (d.action === "save_turf") return saveTurf(d);
+      if (d.action === "delete_turf") return deleteTurf(d);
       if (d.action === "feedback_action") return feedbackAction(d);
       if (d.action === "admin_list") return adminList();
       if (String(d.action || "").indexOf("admin_") === 0) return adminAction(d);
