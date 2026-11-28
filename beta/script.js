@@ -499,23 +499,44 @@
     var ics = lines.join("\r\n");
     var ua = navigator.userAgent || "";
     var isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    if (isIOS) {
-      // iOS can't "download" a calendar file from a page. Opening a real .ics URL
-      // (served by our Supabase "ics" function) brings up the native "Add to Calendar" sheet.
-      if (BE && e._src === "sheet" && e.visibility !== "crew") window.location.href = BE.icsUrl(e.id);
-      else window.location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
-    } else {
+    var isAndroid = /Android/i.test(ua);
+    var g = "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(e.title) +
+      "&dates=" + icsDate(e.startD) + "/" + icsDate(e.endD) + "&location=" + encodeURIComponent((e.place || "") + " (" + e.coords.join(",") + ")") +
+      "&details=" + encodeURIComponent(desc.replace(/\\n/g, "\n"));
+    function saveIcsFile() {
       var blob = new Blob([ics], { type: "text/calendar" });
       var a = document.createElement("a");
       a.href = URL.createObjectURL(blob); a.download = e.id + ".ics";
       document.body.appendChild(a); a.click(); a.remove();
     }
-    var g = "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(e.title) +
-      "&dates=" + icsDate(e.startD) + "/" + icsDate(e.endD) + "&location=" + encodeURIComponent((e.place || "") + " (" + e.coords.join(",") + ")") +
-      "&details=" + encodeURIComponent(desc.replace(/\\n/g, "\n"));
+    var head, alt;
+    if (isIOS) {
+      // iOS can't "download" a calendar file from a page. Opening a real .ics URL
+      // (served by our Supabase "ics" function) brings up the native "Add to Calendar" sheet.
+      if (BE && e._src === "sheet" && e.visibility !== "crew") window.location.href = BE.icsUrl(e.id);
+      else window.location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
+      head = "Opening your Calendar…";
+      alt = "Using Google Calendar? <a target='_blank' rel='noopener' style='color:var(--acc)' href='" + esc(g) + "'>Add it there instead</a>";
+    } else if (isAndroid) {
+      // Opens the phone's calendar app (Google Calendar) on its "new event" screen, already filled in.
+      // If no calendar app answers, Chrome falls back to Google Calendar on the web.
+      var x = function (v) { return encodeURIComponent(v || ""); };
+      window.location.href = "intent:#Intent;action=android.intent.action.INSERT;type=vnd.android.cursor.dir/event" +
+        ";S.title=" + x(e.title) + ";S.eventLocation=" + x(e.place) + ";S.description=" + x(desc.replace(/\\n/g, "\n")) +
+        ";l.beginTime=" + e.startD.getTime() + ";l.endTime=" + e.endD.getTime() +
+        ";S.browser_fallback_url=" + x(g) + ";end";
+      head = "Opening your Calendar…";
+      alt = "Didn't open? <a target='_blank' rel='noopener' style='color:var(--acc)' href='" + esc(g) + "'>Use Google Calendar</a> or <a href='#' data-ics-file style='color:var(--acc)'>download the file</a>";
+    } else {
+      window.open(g, "_blank", "noopener");
+      head = "Opened Google Calendar";
+      alt = "Use Outlook or Apple Calendar? <a href='#' data-ics-file style='color:var(--acc)'>Download the file</a>";
+    }
     var el = document.createElement("div");
     el.className = "toast";
-    el.innerHTML = "<b>" + (isIOS ? "Opening your Calendar…" : "Calendar file downloaded") + "</b><span class='muted'>Using Google Calendar? <a target='_blank' rel='noopener' style='color:var(--acc)' href='" + esc(g) + "'>Add it there instead</a></span>";
+    el.innerHTML = "<b>" + head + "</b><span class='muted'>" + alt + "</span>";
+    var f = el.querySelector("[data-ics-file]");
+    if (f) f.addEventListener("click", function (ev) { ev.preventDefault(); saveIcsFile(); });
     $("#toasts").appendChild(el); setTimeout(function () { el.remove(); }, 8000);
   }
 
@@ -1890,6 +1911,85 @@
       setTimeout(function () { location.reload(); }, 900);
     }).catch(function (err) { dl.disabled = false; toast("Couldn't remove", err.message); });
   });
+
+  /* ---------------- installable app: Android install button, iPhone guide, in-app browsers ---------------- */
+  (function () {
+    var ua = navigator.userAgent || "";
+    var isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    var isAndroid = /Android/.test(ua);
+    var inApp = /FBAN|FBAV|FB_IAB|FBIOS|Instagram|Messenger|Line\/|TikTok|musical_ly/i.test(ua);
+    var standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+    var deferred = null;
+
+    if ("serviceWorker" in navigator && (location.protocol === "https:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) {
+      var reg = function () { navigator.serviceWorker.register("sw.js").catch(function () {}); };
+      if (document.readyState === "complete") reg(); else window.addEventListener("load", reg);
+    }
+    if (standalone) return;                                  // already running as the app
+
+    function canOffer() { return !!deferred || isIOS || inApp || isAndroid; }
+    function showButtons() { $$("[data-install]").forEach(function (b) { b.hidden = !canOffer(); }); }
+    window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); deferred = e; showButtons(); maybeBanner(); });
+    window.addEventListener("appinstalled", function () {
+      deferred = null; $("#install-banner").hidden = true; showButtons();
+      toast("Installed ✅", "Open Street Archive from your home screen.", 6000);
+    });
+    showButtons();
+
+    function guide() {
+      var h;
+      if (inApp) {
+        h = "<p>You're viewing this inside another app (like Facebook or Messenger), which can't install apps.</p>" +
+          "<ol class='steps'><li>Tap <b>⋯</b> or <b>⋮</b> in the top corner.</li>" +
+          "<li>Choose <b>Open in " + (isIOS ? "Safari" : "Chrome") + "</b> (or “Open in external browser”).</li>" +
+          "<li>Then tap <b>📲 Install</b> in Street Archive's account menu.</li></ol>";
+      } else if (isIOS) {
+        h = "<p>On iPhone, apps from websites are added from the Share menu — it takes 10 seconds:</p>" +
+          "<ol class='steps'><li>Tap the <b>Share</b> button <svg class='ios-share' viewBox='0 0 24 24' width='18' height='18' aria-label='Share icon'><path d='M12 3v12M7.5 7.5 12 3l4.5 4.5M7 10H5.5A1.5 1.5 0 0 0 4 11.5v8A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5v-8a1.5 1.5 0 0 0-1.5-1.5H17' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg> — at the bottom in Safari, or next to the address bar in Chrome.</li>" +
+          "<li>Scroll down and tap <b>Add to Home Screen</b> ⊞.<br><span class='muted small'>Don't see it? Tap “Edit Actions…” at the bottom and add it.</span></li>" +
+          "<li>Tap <b>Add</b>. Street Archive now opens full screen from your Home Screen.</li></ol>" +
+          "<p class='muted small'>You'll sign in once more inside the app — iPhone keeps apps separate from Safari.</p>";
+      } else if (isAndroid) {
+        h = "<ol class='steps'><li>Tap <b>⋮</b> (top-right in Chrome).</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li><li>Tap <b>Install</b>.</li></ol>";
+      } else {
+        h = "<p>In Chrome or Edge, click the <b>install icon</b> at the right end of the address bar, or open the browser menu and choose <b>Install Street Archive</b>.</p>" +
+          "<p class='muted small'>On a phone it's even better — open this site on your phone and tap Install.</p>";
+      }
+      $("#install-body").innerHTML = h;
+      $("#install-panel").hidden = false;
+    }
+    function install() {
+      $("#acct-menu").hidden = true;
+      if (deferred) {
+        deferred.prompt();
+        deferred.userChoice.then(function (c) { if (c && c.outcome === "accepted") $("#install-banner").hidden = true; deferred = null; showButtons(); });
+        return;
+      }
+      guide();
+    }
+    document.addEventListener("click", function (e) { if (e.target.closest("[data-install]")) { e.preventDefault(); install(); } });
+    $$("[data-install-close]").forEach(function (b) { b.onclick = function () { $("#install-panel").hidden = true; }; });
+    $("#install-panel").addEventListener("click", function (e) { if (e.target.id === "install-panel") $("#install-panel").hidden = true; });
+
+    // A small banner on phones, a few seconds after opening (not again for a week after "×").
+    var shown = false;
+    function maybeBanner() {
+      if (shown || !mq.matches || !canOffer()) return;
+      var until = +store.get("installSnooze", 0);
+      if (until && Date.now() < until) return;
+      shown = true;
+      setTimeout(function () {
+        $("#ib-title").textContent = inApp ? "Open in your browser to install" : "Get the Street Archive app";
+        $("#ib-sub").textContent = inApp ? "Facebook / Messenger can't install apps." : isIOS ? "Add it to your Home Screen — full screen, no browser bars." : "Full screen, one tap from your home screen.";
+        $("#ib-go").textContent = deferred ? "Install" : "How?";
+        $("#install-banner").hidden = false;
+      }, 5000);
+    }
+    $("#ib-go").onclick = function () { $("#install-banner").hidden = true; install(); };
+    $("#ib-close").onclick = function () { $("#install-banner").hidden = true; store.set("installSnooze", Date.now() + 7 * 864e5); };
+    if (isIOS || inApp) maybeBanner();
+    else if (isAndroid) setTimeout(function () { if (!deferred) maybeBanner(); }, 2500);   // browsers that never offer the install prompt
+  })();
 
   /* ---------------- feedback (anyone can send; admin reads it in the Admin panel) ---------------- */
   function deviceInfo() {
