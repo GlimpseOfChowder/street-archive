@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calendar test</title>
+<style>body{font-family:system-ui,sans-serif;background:#0b0d12;color:#eee;padding:18px;max-width:520px;margin:auto}
+a{display:block;margin:12px 0;padding:14px;border-radius:10px;background:#1c2230;color:#fff;text-decoration:none;font-weight:600}
+small{display:block;color:#9aa;font-weight:400;margin-top:4px}</style></head>
+<body><h2>Calendar test</h2><p>Tap each button. Note which ones open the <b>Google Calendar app</b> (not a browser page). Come back here after each.</p>
+<div id="b"></div>
+<script>
+var s=new Date(Date.now()+86400000);s.setMinutes(0,0,0);var e=new Date(s.getTime()+7200000);
+function d(x){return x.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"")}
+var t="Street Archive test meet",loc="SM Mall of Asia, Pasay",det="Calendar test from Street Archive";
+var q="action=TEMPLATE&text="+encodeURIComponent(t)+"&dates="+d(s)+"/"+d(e)+"&location="+encodeURIComponent(loc)+"&details="+encodeURIComponent(det);
+var web="https://calendar.google.com/calendar/render?"+q;
+var L=[
+["A","https://calendar.google.com/calendar/event?"+q,"calendar.google.com/calendar/event link"],
+["B","https://www.google.com/calendar/event?"+q,"google.com/calendar/event link"],
+["C","intent://calendar.google.com/calendar/render?"+q+"#Intent;scheme=https;package=com.google.android.calendar;S.browser_fallback_url="+encodeURIComponent(web)+";end","app-targeted render link"],
+["D","intent://calendar.google.com/calendar/event?"+q+"#Intent;scheme=https;package=com.google.android.calendar;S.browser_fallback_url="+encodeURIComponent(web)+";end","app-targeted event link"]
+];
+document.getElementById("b").innerHTML=L.map(function(l){return "<a href='"+l[1].replace(/'/g,"%27")+"' target='_blank' rel='noopener'>Test "+l[0]+"<small>"+l[2]+"</small></a>"}).join("");
+</script></body></html>
