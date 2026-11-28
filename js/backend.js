@@ -60,21 +60,25 @@
   function load() {
     return ready.then(function () {
       return Promise.all([
-        sb.from("crews").select("id,name,area,color,radius_km,lat,lng,logo_url,link,tags").eq("status", "live"),
-        sb.from("meets").select("id,title,type,host_crew,visibility,start_at,end_at,place,lat,lng,details,link").eq("status", "live"),
-        sb.from("places").select("id,name,category,tags,area,lat,lng,phone,hours,link,details").eq("status", "live")
+        sb.from("crews").select("id,name,area,color,radius_km,lat,lng,logo_url,link,tags,verified").eq("status", "live"),
+        sb.from("meets").select("id,title,type,host_crew,visibility,start_at,end_at,place,lat,lng,details,link,created_by,author:created_by(display_name)").eq("status", "live"),
+        sb.from("places").select("id,name,category,tags,area,lat,lng,phone,hours,link,details").eq("status", "live"),
+        sb.rpc("rsvp_counts")
       ]);
     }).then(function (res) {
-      res.forEach(function (r) { if (r.error) throw r.error; });
+      res.slice(0, 3).forEach(function (r) { if (r.error) throw r.error; });
+      var going = {};
+      if (!res[3].error) (res[3].data || []).forEach(function (x) { going[x.meet_id] = Number(x.n) || 0; });
       return {
+        going: going,
         crews: res[0].data.map(function (c) {
           return { id: c.id, name: c.name, area: c.area, color: c.color, radius_km: c.radius_km, lat: c.lat, lng: c.lng,
-                   logo: c.logo_url, link: c.link, tags: (c.tags || []).join(", ") };
+                   logo: c.logo_url, link: c.link, tags: (c.tags || []).join(", "), verified: !!c.verified };
         }),
         events: res[1].data.map(function (m) {
           return { id: m.id, title: m.title, type: m.type, host: m.host_crew || "", visibility: m.visibility,
                    start: toLocal(m.start_at), end: toLocal(m.end_at), place: m.place, lat: m.lat, lng: m.lng,
-                   details: m.details, link: m.link };
+                   details: m.details, link: m.link, by_id: m.created_by || "", by: m.author && m.author.display_name ? m.author.display_name : "" };
         }),
         places: res[2].data.map(function (p) {
           return { id: p.id, name: p.name, category: p.category, tags: (p.tags || []).join(", "), area: p.area,
@@ -199,6 +203,100 @@
     });
   }
 
+  /* ---------- profiles & My Garage ---------- */
+  function profile(d) {
+    var id = d.user_id || uid(), me = id === uid();
+    var qs = [
+      sb.from("profiles").select("id,display_name,avatar_url,bio,link,created_at,is_admin").eq("id", id).maybeSingle(),
+      sb.rpc("profile_stats", { uid: id }),
+      sb.from("crew_members").select("crew_id,role,status,crew:crew_id(name,logo_url,color,verified,status)").eq("user_id", id).eq("status", "active"),
+      sb.from("cars").select("*").eq("owner", id).order("created_at"),
+      sb.from("meets").select("id,title,start_at,visibility").eq("created_by", id).eq("status", "live").gte("start_at", new Date(Date.now() - 12 * 36e5).toISOString()).order("start_at").limit(10)
+    ];
+    if (me) qs.push(sb.from("rsvps").select("meet_id,meet:meet_id(title,start_at,status)").eq("user_id", id));
+    return Promise.all(qs).then(function (res) {
+      res.forEach(function (r) { if (r.error) throw r.error; });
+      var p = res[0].data;
+      if (!p) return { ok: false, error: "This profile doesn't exist anymore." };
+      var st = (res[1].data && res[1].data[0]) || {};
+      return { ok: true, me: me, profile: {
+          id: p.id, name: p.display_name, avatar: p.avatar_url, bio: p.bio, link: p.link, joined: p.created_at, admin: !!p.is_admin },
+        stats: { posted: +st.meets_posted || 0, attended: +st.meets_attended || 0, cars: +st.cars || 0, led: +st.crews_led || 0 },
+        crews: res[2].data.filter(function (x) { return x.crew && x.crew.status === "live"; }).map(function (x) {
+          return { id: x.crew_id, role: x.role, name: x.crew.name, logo: x.crew.logo_url, color: x.crew.color, verified: !!x.crew.verified }; }),
+        cars: res[3].data,
+        meets: res[4].data.map(function (m) { return { id: m.id, title: m.title, start: toLocal(m.start_at), visibility: m.visibility }; }),
+        going: me ? res[5].data.filter(function (x) { return x.meet && x.meet.status === "live" && new Date(x.meet.start_at) > Date.now() - 12 * 36e5; })
+          .map(function (x) { return { id: x.meet_id, title: x.meet.title, start: toLocal(x.meet.start_at) }; })
+          .sort(function (a, b) { return a.start < b.start ? -1 : 1; }) : [] };
+    });
+  }
+  function multiline(s, max) { return String(s == null ? "" : s).replace(/[\u0000-\u0009\u000b-\u001f]/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, max); }
+  function socialLink(s) {
+    s = String(s || "").trim();
+    if (/^@[\w.]{1,40}$/.test(s)) return "https://instagram.com/" + s.slice(1);   // "@handle" = Instagram
+    if (s && !/^https?:/i.test(s) && /^[\w.-]+\.[a-z]{2,}\//i.test(s)) s = "https://" + s;
+    return url(s);
+  }
+  function saveProfile(d) {
+    var row = { display_name: clean(d.name, 40), bio: multiline(d.bio, 300), link: socialLink(d.link) };
+    if (!row.display_name) return Promise.resolve({ ok: false, error: "Your name can't be empty." });
+    return sb.from("profiles").update(row).eq("id", uid()).select("id").then(expectOne);
+  }
+  function uploadCarPhoto(d) {
+    var path = uid() + "/" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + ".jpg";
+    return sb.storage.from("cars").upload(path, d.blob, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false }).then(function (r) {
+      if (r.error) throw r.error;
+      return { ok: true, url: sb.storage.from("cars").getPublicUrl(path).data.publicUrl };
+    });
+  }
+  function photoPath(u) { var m = /\/object\/public\/cars\/(.+)$/.exec(u || ""); return m ? m[1] : ""; }
+  function saveCar(d) {
+    var y = parseInt(d.year, 10);
+    var row = { year: y >= 1950 && y <= 2030 ? y : null, make: clean(d.make, 40), model: clean(d.model, 60), nickname: clean(d.nickname, 40),
+                kind: ["daily", "project", "track", "show", "other"].indexOf(d.kind) > -1 ? d.kind : "daily", mods: multiline(d.mods, 500), photo_url: d.photo_url || "" };
+    if (!row.make) return Promise.resolve({ ok: false, error: "Add the make (e.g. Honda)." });
+    var q = d.id ? sb.from("cars").update(row).eq("id", d.id) : sb.from("cars").insert(row);
+    return q.select("id").then(function (r) {
+      var res = expectOne(r);
+      if (res.ok && d.old_photo && d.old_photo !== row.photo_url && photoPath(d.old_photo)) sb.storage.from("cars").remove([photoPath(d.old_photo)]);
+      return res;
+    });
+  }
+  function deleteCar(d) {
+    return sb.from("cars").delete().eq("id", d.id).select("id,photo_url").then(function (r) {
+      var res = expectOne(r);
+      if (res.ok && r.data[0].photo_url && photoPath(r.data[0].photo_url)) sb.storage.from("cars").remove([photoPath(r.data[0].photo_url)]);
+      return res;
+    });
+  }
+  /* ---------- "Pulling up" ---------- */
+  function myRsvps() {
+    return sb.from("rsvps").select("meet_id,car_id").eq("user_id", uid()).then(function (r) {
+      if (r.error) throw r.error;
+      var m = {}; r.data.forEach(function (x) { m[x.meet_id] = x.car_id || ""; });
+      return { ok: true, items: m };
+    });
+  }
+  function rsvp(d) {
+    return sb.from("rsvps").upsert({ meet_id: d.meet_id, user_id: uid(), car_id: d.car_id || null }, { onConflict: "meet_id,user_id" })
+      .select("meet_id").then(expectOne);
+  }
+  function unrsvp(d) { return sb.from("rsvps").delete().eq("meet_id", d.meet_id).eq("user_id", uid()).select("meet_id").then(expectOne); }
+  function going(d) {
+    return ready.then(function () {
+      return sb.from("rsvps").select("user_id,created_at,profile:user_id(display_name,avatar_url),car:car_id(year,make,model,nickname)")
+        .eq("meet_id", d.meet_id).order("created_at").limit(100);
+    }).then(function (r) {
+      if (r.error) throw r.error;
+      return { ok: true, items: r.data.map(function (x) {
+        var c = x.car;
+        return { user_id: x.user_id, name: (x.profile || {}).display_name || "Someone", avatar: (x.profile || {}).avatar_url || "",
+                 car: c ? (c.nickname ? c.nickname + " · " : "") + [c.year, c.make, c.model].filter(Boolean).join(" ") : "" };
+      }) };
+    });
+  }
+
   /* ---------- crews: membership ---------- */
   // Your crews (any status) + how many join requests wait in crews you run.
   function myCrews() {
@@ -238,7 +336,12 @@
       sb.from("meets").select("id,title,start_at,status,visibility,created_by,author:created_by(display_name)").eq("host_crew", d.crew_id).order("start_at", { ascending: false }).limit(30)
     ]).then(function (res) {
       res.forEach(function (r) { if (r.error) throw r.error; });
-      return { ok: true,
+      var ids = res[0].data.filter(function (m) { return m.status === "active"; }).map(function (m) { return m.user_id; });
+      var carsQ = ids.length ? sb.from("cars").select("id,owner,year,make,model,nickname,kind,photo_url").in("owner", ids).order("created_at").limit(60) : Promise.resolve({ data: [] });
+      return Promise.resolve(carsQ).then(function (cr) { if (cr.error) throw cr.error; return [res, cr.data || []]; });
+    }).then(function (both) {
+      var res = both[0], cars = both[1];
+      return { ok: true, cars: cars,
         members: res[0].data.map(function (m) {
           var pr = m.profile || {};
           return { user_id: m.user_id, role: m.role, status: m.status, name: pr.display_name || "Member", avatar: pr.avatar_url || "", since: toLocal(m.created_at) };
@@ -302,9 +405,9 @@
   }
 
   function whoami() {
-    return sb.from("profiles").select("is_admin,is_trusted,is_banned").eq("id", uid()).maybeSingle().then(function (r) {
+    return sb.rpc("my_flags").then(function (r) {
       if (r.error) throw r.error;
-      var p = r.data || {};
+      var p = (r.data && r.data[0]) || {};
       return { ok: true, admin: !!p.is_admin && !p.is_banned, trusted: !!(p.is_trusted || p.is_admin) && !p.is_banned, banned: !!p.is_banned };
     });
   }
@@ -370,6 +473,14 @@
       if (d.action === "delete") return remove(d);
       if (d.action === "report") return report(d);
       if (d.action === "my_crews") return myCrews();
+      if (d.action === "profile") return profile(d);
+      if (d.action === "save_profile") return saveProfile(d);
+      if (d.action === "upload_car_photo") return uploadCarPhoto(d);
+      if (d.action === "save_car") return saveCar(d);
+      if (d.action === "delete_car") return deleteCar(d);
+      if (d.action === "my_rsvps") return myRsvps();
+      if (d.action === "rsvp") return rsvp(d);
+      if (d.action === "unrsvp") return unrsvp(d);
       if (d.action === "join_crew") return joinCrew(d);
       if (d.action === "leave_crew") return leaveCrew(d);
       if (d.action === "crew_panel") return crewPanel(d);
@@ -404,6 +515,9 @@
   window.SA_BACKEND = {
     ready: ready,
     load: load,
+    crewPanel: function (d) { return ready.then(function () { return crewPanel(d); }).catch(function (e) { return { ok: false, error: friendly(e) }; }); },
+    profile: function (d) { return ready.then(function () { return profile(d); }).catch(function (e) { return { ok: false, error: friendly(e) }; }); },
+    going: function (d) { return going(d).catch(function (e) { return { ok: false, error: friendly(e) }; }); },
     memberCounts: memberCounts,
     call: call,
     user: user,
