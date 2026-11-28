@@ -518,3 +518,14 @@ a.mname { color: var(--text); text-decoration: none; }
 .crew-garage { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .crew-garage .car-meta p { display: none; }
 .car-owner { font-size: 12px; color: var(--acc); text-decoration: none; }
+
+/* feedback */
+.fb-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.fb-kinds .chip-check input { position: absolute; opacity: 0; pointer-events: none; }
+.fb-kinds .chip-check:has(input:checked) { background: var(--acc); color: #000; border-color: var(--acc); }
+.fb-count { text-align: right; margin: -6px 0 8px; }
+.fb-sent { text-align: center; padding: 10px 0; }
+.fb-big { font-size: 44px; margin: 0; }
+.fb-msg { margin: 6px 0; white-space: normal; }
+.fb-done { opacity: .6; }
+.acct-fb { margin-top: 10px; width: 100%; }

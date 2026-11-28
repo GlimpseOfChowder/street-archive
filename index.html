@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Covered+By+Your+Grace&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=20261128n">
+  <link rel="stylesheet" href="styles.css?v=20261128o">
 </head>
 <body>
 
@@ -51,6 +51,7 @@
         <div id="acct-out">
           <p>Sign in to post meets and claim your crew's turf.</p>
           <div id="gsi-menu-btn" class="gsi-slot"></div>
+          <button class="btn sm acct-fb" data-feedback>💬 Send feedback</button>
         </div>
         <div id="acct-in" hidden>
           <div class="acct-who"><b id="acct-name"></b><span id="acct-email" class="muted"></span></div>
@@ -61,7 +62,7 @@
           <div id="acct-crews" hidden><h5>My crews</h5><ul id="acct-crew-list" class="acct-posts"></ul></div>
           <h5>My posts</h5>
           <ul id="acct-posts" class="acct-posts"></ul>
-          <div class="acct-actions"><button id="acct-profile" class="btn sm">My profile</button><button id="acct-admin" class="btn sm btn-accent" hidden>Admin panel</button><button id="acct-signout" class="btn sm">Sign out</button></div>
+          <div class="acct-actions"><button id="acct-profile" class="btn sm">My profile</button><button class="btn sm" data-feedback>💬 Feedback</button><button id="acct-admin" class="btn sm btn-accent" hidden>Admin panel</button><button id="acct-signout" class="btn sm">Sign out</button></div>
         </div>
       </div>
     </div>
@@ -103,7 +104,7 @@
     </section>
 
     <footer class="panel-foot">
-      <span>Turf data is community-submitted. · <a href="privacy.html" style="color:inherit">Privacy</a></span>
+      <span>Turf data is community-submitted. · <a href="#" data-feedback style="color:inherit">Feedback</a> · <a href="privacy.html" style="color:inherit">Privacy</a></span>
     </footer>
   </aside>
 
@@ -242,6 +243,30 @@
   </div>
 
   <!-- ===== Admin panel ===== -->
+  <div id="feedback-panel" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="fb-title">
+      <button class="modal-x" data-fb-close aria-label="Close">×</button>
+      <h2 id="fb-title">Send feedback</h2>
+      <form id="fb-form" class="fb-form">
+        <div class="fb-kinds">
+          <label class="chip chip-check"><input type="radio" name="kind" value="bug"><span>🐞 Something's broken</span></label>
+          <label class="chip chip-check"><input type="radio" name="kind" value="idea"><span>💡 Idea</span></label>
+          <label class="chip chip-check"><input type="radio" name="kind" value="other" checked><span>💬 Other</span></label>
+        </div>
+        <label>Message<textarea name="message" rows="5" maxlength="1000" placeholder="What happened, or what would you like to see?"></textarea></label>
+        <div id="fb-count" class="muted small fb-count">0 / 1000</div>
+        <label>How can we reach you? <span class="muted">(optional — FB, IG or email)</span><input name="contact" maxlength="200" placeholder="@yourhandle"></label>
+        <p class="muted small">Sent privately to the Street Archive admin, with your device type and the screen you were on, to help fix bugs.</p>
+        <div class="modal-actions"><button type="button" class="btn" data-fb-close>Cancel</button><button id="fb-send" type="submit" class="btn btn-accent">Send</button></div>
+      </form>
+      <div id="fb-sent" class="fb-sent" hidden>
+        <p class="fb-big">🙏</p>
+        <p><b>Thanks — got it!</b><br><span class="muted">Every message gets read.</span></p>
+        <div class="modal-actions"><button type="button" class="btn btn-accent" data-fb-close>Close</button></div>
+      </div>
+    </div>
+  </div>
+
   <div id="profile-panel" class="modal" hidden>
     <div class="modal-card admin-card" role="dialog" aria-modal="true" aria-labelledby="profile-title">
       <button class="modal-x" data-profile-close aria-label="Close">×</button>
@@ -299,6 +324,7 @@
         <button class="chip" data-t="live">Live <b>0</b></button>
         <button class="chip" data-t="archived">Archived <b>0</b></button>
         <button class="chip" data-t="requests">Join requests <b>0</b></button>
+        <button class="chip" data-t="feedback">Feedback <b>0</b></button>
       </div>
       <div class="chips admin-kinds" id="admin-kinds">
         <button class="chip active" data-k="all">All <b>0</b></button>
@@ -329,10 +355,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://unpkg.com/@supabase/supabase-js@2.119.2/dist/umd/supabase.js"></script>
-  <script src="js/config.js?v=20261128n"></script>
-  <script src="js/backend.js?v=20261128n"></script>
-  <script src="data/crews.js?v=20261128n"></script>
-  <script src="data/events.js?v=20261128n"></script>
-  <script src="script.js?v=20261128n"></script>
+  <script src="js/config.js?v=20261128o"></script>
+  <script src="js/backend.js?v=20261128o"></script>
+  <script src="data/crews.js?v=20261128o"></script>
+  <script src="data/events.js?v=20261128o"></script>
+  <script src="script.js?v=20261128o"></script>
 </body>
 </html>
