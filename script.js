@@ -927,7 +927,7 @@
     if (!resp || !resp.credential) { toast("Sign-in failed", "Please try again."); return; }
     BE.signInWithGoogle(resp.credential).then(function (u) {
       auth = u;
-      renderAccount(); updateGate(); loadRole(); loadMyCrews(); MYCARS = null; loadMyRsvps();
+      renderAccount(); updateGate(); loadRole(); loadMyCrews(); MYCARS = null; loadMyRsvps(); loadMyBasics();
       toast("Signed in", "Welcome, " + ((auth && auth.name) || "").split(" ")[0] + "!");
       // crew-only meets you belong to appear after a refresh of the data
       BE.load().then(function (d) { cacheSet(d); }).catch(function () {});
@@ -1011,8 +1011,8 @@
     });
     BE.onAuthChange(function () {
       var was = auth && auth.id;
-      auth = BE.user(); renderAccount(); updateGate();
-      if ((auth && auth.id) !== was) { loadRole(); loadMyCrews(); MYCARS = null; loadMyRsvps(); }   // signed in / out / switched account
+      auth = BE.user(); applyBasics(); renderAccount(); updateGate();
+      if ((auth && auth.id) !== was) { MYBASICS = null; loadRole(); loadMyCrews(); MYCARS = null; loadMyRsvps(); loadMyBasics(); }   // signed in / out / switched account
     });
     $("#acct-btn").onclick = function (e) {
       e.stopPropagation();
@@ -1491,6 +1491,17 @@
   var FOUNDING_BEFORE = new Date("2027-03-01T00:00:00+08:00");
   var KIND_LABEL = { daily: "Daily", project: "Project", track: "Track", show: "Show car", other: "Other" };
   function carName(c) { return [c.year, c.make, c.model].filter(Boolean).join(" "); }
+  var MYBASICS = null;   // { name, avatar } from your profile
+  function applyBasics() {
+    if (!auth || !MYBASICS) return;
+    if (MYBASICS.name) auth.name = MYBASICS.name;
+    if (MYBASICS.avatar) auth.picture = MYBASICS.avatar;
+    renderAccount();
+  }
+  function loadMyBasics() {
+    if (!AUTH_ON || !authValid()) { MYBASICS = null; return Promise.resolve(); }
+    return api({ action: "my_basics" }).then(function (r) { if (r && r.ok) { MYBASICS = r; applyBasics(); } }).catch(function () {});
+  }
   function loadMyRsvps() {
     if (!AUTH_ON || !authValid()) { MYRSVP = {}; return Promise.resolve(); }
     return api({ action: "my_rsvps" }).then(function (r) { if (r && r.ok) { MYRSVP = r.items; renderMeets(); } }).catch(function () {});
@@ -1607,8 +1618,7 @@
     var p = r.profile, h = "";
     var joined = new Date(p.joined), link = safeUrl(p.link);
     h += "<div class='prof-head'><span class='mav lg'>" + (p.avatar ? "<img src='" + esc(p.avatar) + "' alt='' referrerpolicy='no-referrer'>" : "<b>" + esc(initials(p.name || "?")) + "</b>") + "</span>" +
-      "<div><h2>" + esc(p.name || "Member") + "</h2><div class='muted small'>Member since " + esc(fmtMon.format(joined)) + " " + joined.getFullYear() +
-      " · " + r.stats.attended + " meet" + (r.stats.attended === 1 ? "" : "s") + " attended</div>" +
+      "<div><h2>" + esc(p.name || "Member") + "</h2><div class='muted small'>" + (isNaN(joined) ? "" : "Member since " + esc(fmtMon.format(joined)) + " " + joined.getFullYear() + " · ") + r.stats.attended + " meet" + (r.stats.attended === 1 ? "" : "s") + " attended</div>" +
       (link ? "<a class='prof-link' href='" + esc(link) + "' target='_blank' rel='noopener'>" + esc(link.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")) + " ↗</a>" : "") + "</div></div>";
     var badges = badgesFor(r);
     if (badges.length) h += "<div class='badges'>" + badges.map(function (x) { return "<span class='badge-chip' title='" + esc(x[1]) + "'>" + x[0] + " " + esc(x[1]) + "</span>"; }).join("") + "</div>";
@@ -1647,7 +1657,7 @@
     }
     $("#profile-title").textContent = r.me ? "My profile" : "Profile";
     $("#profile-body").innerHTML = h;
-    $("#profile-body").dataset.json = JSON.stringify({ name: p.name, bio: p.bio, link: p.link });
+    $("#profile-body").dataset.json = JSON.stringify({ name: p.name, bio: p.bio, link: p.link, avatar: p.avatar });
   }
   function closeProfile() { $("#profile-panel").hidden = true; profileId = null; }
   // jump to a meet / crew from a profile
@@ -1664,21 +1674,36 @@
     if (cn) { openProfile(profileId); return; }
     if (ed) {
       var cur = JSON.parse($("#profile-body").dataset.json || "{}");
+      avatarChoice = { blob: null, url: cur.avatar || "", old: cur.avatar || "", changed: false };
+      var gpic = auth && auth.googlePicture;
       $("#profile-body").innerHTML = "<form id='prof-form' class='prof-form'>" +
+        "<div class='avatar-edit'><span class='mav lg' id='avatar-preview'>" + avatarHtml(cur.avatar, cur.name) + "</span><div>" +
+        "<label class='btn sm avatar-pick'>📷 Change photo<input id='avatar-file' type='file' accept='image/*' hidden></label>" +
+        (gpic ? "<button type='button' class='btn sm' data-avatar-google>Use my Google photo</button>" : "") +
+        "<div id='avatar-note' class='muted small'>Square photos look best — we'll crop it for you.</div></div></div>" +
         "<label>Name<input name='name' maxlength='40' value='" + esc(cur.name || "") + "'></label>" +
         "<label>Bio <span class='muted'>(optional)</span><textarea name='bio' rows='3' maxlength='300' placeholder='Your build, your crew, what you drive…'>" + esc(cur.bio || "") + "</textarea></label>" +
         "<label>Instagram / FB / TikTok <span class='muted'>(optional)</span><input name='link' maxlength='200' placeholder='@yourhandle or https://…' value='" + esc(cur.link || "") + "'></label>" +
-        "<p class='muted small'>Your email is never shown. Your photo comes from your Google account.</p>" +
+        "<p class='muted small'>Your email is never shown.</p>" +
         "<div class='modal-actions'><button type='button' class='btn' data-prof-cancel>Cancel</button><button type='button' class='btn btn-accent' data-prof-save>Save</button></div></form>";
       return;
     }
-    var f = $("#prof-form"); sv.disabled = true;
-    api({ action: "save_profile", name: f.elements.name.value, bio: f.elements.bio.value, link: f.elements.link.value }).then(function (r) {
+    var f = $("#prof-form"); sv.disabled = true; sv.textContent = avatarChoice && avatarChoice.blob ? "Uploading photo…" : "Saving…";
+    var up = avatarChoice && avatarChoice.blob ? api({ action: "upload_avatar", blob: avatarChoice.blob }) : Promise.resolve({ ok: true, url: avatarChoice ? avatarChoice.url : undefined });
+    up.then(function (u) {
+      if (!u.ok) throw new Error(u.error || "Photo upload failed");
+      var d = { action: "save_profile", name: f.elements.name.value, bio: f.elements.bio.value, link: f.elements.link.value };
+      if (avatarChoice && avatarChoice.changed) { d.avatar = u.url || ""; d.old_avatar = avatarChoice.old; }
+      return api(d).then(function (r) { return [r, d]; });
+    }).then(function (rd) {
+      var r = rd[0], d = rd[1];
       if (!r.ok) throw new Error(r.error);
       toast("Profile saved ✅");
-      if (auth) { auth.name = f.elements.name.value.trim(); renderAccount(); }
+      MYBASICS = { name: f.elements.name.value.trim(), avatar: d.avatar !== undefined ? d.avatar : (MYBASICS && MYBASICS.avatar) || "" };
+      if (auth) { auth.name = MYBASICS.name; if (d.avatar !== undefined) auth.picture = d.avatar || auth.googlePicture || ""; renderAccount(); }
+      avatarChoice = null;
       openProfile(profileId);
-    }).catch(function (err) { sv.disabled = false; toast("Couldn't save", err.message); });
+    }).catch(function (err) { sv.disabled = false; sv.textContent = "Save"; toast("Couldn't save", err.message); });
   });
 
   // ---- car form (add / edit) ----
@@ -1770,7 +1795,43 @@
     $("#car-panel").addEventListener("click", function (e) { if (e.target.id === "car-panel") closeCarForm(); });
     $("#acct-profile").onclick = function () { openProfile(auth && auth.id); };
     BE.ready.then(loadMyRsvps);
+    BE.ready.then(loadMyBasics);
   }
+
+  /* ---------------- profile photo: crop to a square on the phone, upload ---------------- */
+  var avatarChoice = null;   // { blob, url, old, changed } while editing your profile
+  function avatarHtml(url, name) { return url ? "<img src='" + esc(url) + "' alt='' referrerpolicy='no-referrer'>" : "<b>" + esc(initials(name || "?")) + "</b>"; }
+  function squareImage(file, size) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image(), u = URL.createObjectURL(file);
+      img.onload = function () {
+        URL.revokeObjectURL(u);
+        var s = Math.min(img.naturalWidth, img.naturalHeight), c = document.createElement("canvas");
+        c.width = c.height = size;
+        c.getContext("2d").drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, size, size);
+        c.toBlob(function (b) { b ? resolve(b) : reject(new Error("Couldn't read that photo.")); }, "image/jpeg", 0.85);
+      };
+      img.onerror = function () { URL.revokeObjectURL(u); reject(new Error("That file doesn't look like a photo (try a JPG or PNG).")); };
+      img.src = u;
+    });
+  }
+  document.addEventListener("change", function (e) {
+    if (e.target.id !== "avatar-file") return;
+    var file = e.target.files && e.target.files[0]; if (!file || !avatarChoice) return;
+    $("#avatar-note").textContent = "Preparing photo…";
+    squareImage(file, 400).then(function (b) {
+      avatarChoice.blob = b; avatarChoice.changed = true;
+      $("#avatar-preview").innerHTML = "<img src='" + URL.createObjectURL(b) + "' alt=''>";
+      $("#avatar-note").textContent = "New photo ready · " + Math.round(b.size / 1024) + " KB — tap Save";
+    }).catch(function (err) { $("#avatar-note").textContent = err.message; });
+  });
+  document.addEventListener("click", function (e) {
+    var g = e.target.closest("[data-avatar-google]"); if (!g || !avatarChoice) return;
+    e.preventDefault();
+    avatarChoice.blob = null; avatarChoice.url = (auth && auth.googlePicture) || ""; avatarChoice.changed = true;
+    $("#avatar-preview").innerHTML = avatarHtml(avatarChoice.url, auth && auth.name);
+    $("#avatar-note").textContent = "Your Google photo — tap Save";
+  });
 
   /* ---------------- extra turf locations: add / edit / remove ---------------- */
   var turfEditing = null, savedPicked = null;
