@@ -8,7 +8,13 @@
   <meta name="theme-color" content="#0b0d12">
   <meta property="og:title" content="Street Archive: Car Scene Map">
   <meta property="og:description" content="Car crews, turf, meets, cruises and car shows in the Philippines — on one map.">
-  <meta property="og:image" content="https://glimpseofchowder.github.io/street-archive/club_logos/site_logo.png">
+  <meta property="og:image" content="https://glimpseofchowder.github.io/street-archive/club_logos/share.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Street Archive: Car Scene Map — crews, meets, car shows and shops in the Philippines">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Street Archive">
+  <meta name="twitter:card" content="summary_large_image">
   <meta property="og:url" content="https://glimpseofchowder.github.io/street-archive/">
   <link rel="icon" href="club_logos/site_logo.png">
 
@@ -19,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Covered+By+Your+Grace&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=20261128n">
+  <link rel="stylesheet" href="styles.css?v=20261128e">
 </head>
 <body>
 
@@ -52,10 +58,9 @@
             <p>Your session expired — sign in again to post or manage.</p>
             <div id="gsi-reauth-btn" class="gsi-slot"></div>
           </div>
-          <div id="acct-crews" hidden><h5>My crews</h5><ul id="acct-crew-list" class="acct-posts"></ul></div>
           <h5>My posts</h5>
           <ul id="acct-posts" class="acct-posts"></ul>
-          <div class="acct-actions"><button id="acct-profile" class="btn sm">My profile</button><button id="acct-admin" class="btn sm btn-accent" hidden>Admin panel</button><button id="acct-signout" class="btn sm">Sign out</button></div>
+          <div class="acct-actions"><button id="acct-admin" class="btn sm btn-accent" hidden>Admin panel</button><button id="acct-signout" class="btn sm">Sign out</button></div>
         </div>
       </div>
     </div>
@@ -160,13 +165,6 @@
             </label>
             <label>Host crew<select name="host" id="host-select"></select></label>
           </div>
-          <label>Who can see it
-            <select name="visibility">
-              <option value="public">Everyone</option>
-              <option value="crew">Crew members only</option>
-            </select>
-            <span id="vis-hint" class="muted small"></span>
-          </label>
           <div class="row dt-row">
             <label>Start date<input name="start_date" type="date" class="dt"></label>
             <label>Start time<input name="start_time" type="time" step="900" class="dt" value="21:00"></label>
@@ -236,53 +234,6 @@
   </div>
 
   <!-- ===== Admin panel ===== -->
-  <div id="profile-panel" class="modal" hidden>
-    <div class="modal-card admin-card" role="dialog" aria-modal="true" aria-labelledby="profile-title">
-      <button class="modal-x" data-profile-close aria-label="Close">×</button>
-      <h5 id="profile-title" class="prof-kicker">Profile</h5>
-      <div id="profile-body"></div>
-    </div>
-  </div>
-
-  <div id="car-panel" class="modal" hidden>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="car-title">
-      <button class="modal-x" data-car-close aria-label="Close">×</button>
-      <h2 id="car-title">Add a car</h2>
-      <form id="car-form" class="car-form">
-        <div class="row">
-          <label>Year<input name="year" type="number" inputmode="numeric" min="1950" max="2030" placeholder="1998"></label>
-          <label>Make<input name="make" maxlength="40" placeholder="Honda" required></label>
-        </div>
-        <div class="row">
-          <label>Model<input name="model" maxlength="60" placeholder="Civic EK9"></label>
-          <label>Nickname <span class="muted">(optional)</span><input name="nickname" maxlength="40" placeholder="Type R"></label>
-        </div>
-        <label>It's my…
-          <select name="kind">
-            <option value="daily">Daily</option>
-            <option value="project">Project</option>
-            <option value="track">Track car</option>
-            <option value="show">Show car</option>
-            <option value="other">Other</option>
-          </select>
-        </label>
-        <label>Mods / build notes <span class="muted">(optional)</span><textarea name="mods" rows="3" maxlength="500" placeholder="Coilovers, 15&quot; TE37s, intake, tune…"></textarea></label>
-        <label>Photo <span class="muted">(optional)</span><input id="car-photo" type="file" accept="image/*"></label>
-        <div id="car-preview" class="car-preview"></div>
-        <p id="car-photo-note" class="muted small"></p>
-        <div class="modal-actions"><button type="button" class="btn" data-car-close>Cancel</button><button id="car-save" type="submit" class="btn btn-accent">Save</button></div>
-      </form>
-    </div>
-  </div>
-
-  <div id="crew-panel" class="modal" hidden>
-    <div class="modal-card admin-card" role="dialog" aria-modal="true" aria-labelledby="crew-panel-title">
-      <button class="modal-x" data-crew-close aria-label="Close">×</button>
-      <h2 id="crew-panel-title">Crew</h2>
-      <div id="crew-panel-body"></div>
-    </div>
-  </div>
-
   <div id="admin-panel" class="modal" hidden>
     <div class="modal-card admin-card" role="dialog" aria-modal="true" aria-labelledby="admin-title">
       <button class="modal-x" data-admin-close aria-label="Close">×</button>
@@ -292,7 +243,6 @@
         <button class="chip" data-t="flagged">Reported <b>0</b></button>
         <button class="chip" data-t="live">Live <b>0</b></button>
         <button class="chip" data-t="archived">Archived <b>0</b></button>
-        <button class="chip" data-t="requests">Join requests <b>0</b></button>
       </div>
       <div class="chips admin-kinds" id="admin-kinds">
         <button class="chip active" data-k="all">All <b>0</b></button>
@@ -323,10 +273,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://unpkg.com/@supabase/supabase-js@2.119.2/dist/umd/supabase.js"></script>
-  <script src="js/config.js?v=20261128n"></script>
-  <script src="js/backend.js?v=20261128n"></script>
-  <script src="data/crews.js?v=20261128n"></script>
-  <script src="data/events.js?v=20261128n"></script>
-  <script src="script.js?v=20261128n"></script>
+  <script src="js/config.js?v=20261128e"></script>
+  <script src="js/backend.js?v=20261128e"></script>
+  <script src="data/crews.js?v=20261128e"></script>
+  <script src="data/events.js?v=20261128e"></script>
+  <script src="script.js?v=20261128e"></script>
 </body>
 </html>
