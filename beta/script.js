@@ -1057,15 +1057,16 @@
       else setTimeout(function () { location.reload(); }, 1200);
     }).catch(function (e) { btn.disabled = false; toast("Couldn't do that", e.message); });
   }
-  var joinReqs = [];
+  var joinReqs = [], feedbackItems = [];
   function loadAdmin() {
     var list = $("#admin-list");
     if (!adminItems.length) list.innerHTML = "<li class='muted'>Loading…</li>";
-    Promise.all([api({ action: "admin_list" }), api({ action: "join_requests" })]).then(function (rr) {
+    Promise.all([api({ action: "admin_list" }), api({ action: "join_requests" }), api({ action: "feedback_list" })]).then(function (rr) {
       var r = rr[0];
       if (!r.ok) throw new Error(r.error);
       adminItems = r.items || [];
       joinReqs = (rr[1] && rr[1].ok && rr[1].items) || [];
+      feedbackItems = (rr[2] && rr[2].ok && rr[2].items) || [];
       renderAdmin(); loadAdminCounts();
     }).catch(function (e) { list.innerHTML = "<li class='muted'>Couldn't load: " + esc(e.message || "") + "</li>"; });
   }
@@ -1073,11 +1074,28 @@
     var counts = { pending: 0, flagged: 0, live: 0, archived: 0 };
     adminItems.forEach(function (i) { counts[i.status]++; });
     counts.requests = joinReqs.length;
+    counts.feedback = feedbackItems.filter(function (f) { return f.status === "new"; }).length;
     $$("#admin-tabs .chip").forEach(function (c) {
       c.classList.toggle("active", c.dataset.t === adminTab);
       c.querySelector("b").textContent = counts[c.dataset.t] || 0;
     });
-    $("#admin-kinds").hidden = adminTab === "requests";
+    $("#admin-kinds").hidden = adminTab === "requests" || adminTab === "feedback";
+    if (adminTab === "feedback") {
+      var FB_KIND = { bug: "🐞 Bug", idea: "💡 Idea", other: "💬 Other" };
+      var fl = feedbackItems.slice().sort(function (a, b) { return (a.status === "new" ? 0 : 1) - (b.status === "new" ? 0 : 1); });
+      $("#admin-list").innerHTML = fl.length ? fl.map(function (f) {
+        return "<li class='admin-item fb-item" + (f.status === "done" ? " fb-done" : "") + "'><div class='ai-main'>" +
+          "<span class='tag tag-type'>" + (FB_KIND[f.kind] || f.kind) + "</span>" + (f.status === "new" ? "<span class='tag tag-new'>New</span>" : "<span class='tag tag-sample'>Done</span>") +
+          "<p class='fb-msg'>" + esc(f.message).replace(/\n/g, "<br>") + "</p>" +
+          "<div class='muted small'>" + (f.user_id ? "from <a href='#' data-profile='" + esc(f.user_id) + "'>" + esc(f.by || "a member") + "</a>" : "from a visitor (not signed in)") +
+          (f.contact ? " · contact: <b>" + esc(f.contact) + "</b>" : "") + " · " + esc(f.at) + "</div>" +
+          (f.page || f.device ? "<div class='muted small'>" + esc([f.page, f.device].filter(Boolean).join(" · ")) + "</div>" : "") +
+          "</div><div class='ai-btns'>" +
+          (f.status === "new" ? "<button class='btn sm btn-accent' data-fb-act='done' data-id='" + esc(f.id) + "'>Mark done</button>" : "<button class='btn sm' data-fb-act='reopen' data-id='" + esc(f.id) + "'>Reopen</button>") +
+          "<button class='btn sm btn-danger' data-fb-act='delete' data-id='" + esc(f.id) + "'>Delete</button></div></li>";
+      }).join("") : "<li class='muted'>No feedback yet.</li>";
+      return;
+    }
     if (adminTab === "requests") {
       $("#admin-list").innerHTML = joinReqs.length ? joinReqs.map(function (q) {
         return "<li class='admin-item'><div class='ai-main'><span class='tag tag-type'>Join</span><b>" + esc(q.name) + "</b> → " + esc(q.crew) +
@@ -1155,7 +1173,7 @@
   function loadAdminCounts() {
     if (!ROLE.admin || !authValid()) { adminWaiting = 0; updateBadge(); return Promise.resolve(); }
     return api({ action: "admin_counts" }).then(function (r) {
-      if (r && r.ok) { adminWaiting = r.pending + r.reported + r.requests; updateBadge(); }
+      if (r && r.ok) { adminWaiting = r.pending + r.reported + r.requests + (r.feedback || 0); updateBadge(); }
     }).catch(function () {});
   }
   // Keep lists fresh without reloading the page: re-check when you come back to the
@@ -1699,6 +1717,66 @@
     $("#acct-profile").onclick = function () { openProfile(auth && auth.id); };
     BE.ready.then(loadMyRsvps);
   }
+
+  /* ---------------- feedback (anyone can send; admin reads it in the Admin panel) ---------------- */
+  function deviceInfo() {
+    var ua = navigator.userAgent || "";
+    var os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac OS X/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "Other";
+    var br = /FBAN|FBAV/.test(ua) ? "Facebook app" : /Instagram/.test(ua) ? "Instagram app" : /SamsungBrowser/.test(ua) ? "Samsung Internet" : /Edg\//.test(ua) ? "Edge" :
+             /CriOS|Chrome\//.test(ua) ? "Chrome" : /FxiOS|Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "Other browser";
+    var standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+    return os + " · " + br + " · " + window.innerWidth + "×" + window.innerHeight + (standalone ? " · installed app" : "") + (authValid() ? " · signed in" : "");
+  }
+  function pageInfo() {
+    var tab = $(".tab.active"), parts = [];
+    if (tab) parts.push(tab.dataset.tab + " tab");
+    if (location.hash) parts.push(location.hash);
+    if (/\/beta\//.test(location.pathname)) parts.push("beta");
+    return parts.join(" · ");
+  }
+  function openFeedback(kind) {
+    $("#acct-menu").hidden = true; map.closePopup();
+    var f = $("#fb-form"); f.reset();
+    if (kind) f.elements.kind.value = kind;
+    $("#fb-count").textContent = "0 / 1000";
+    $("#fb-sent").hidden = true; f.hidden = false;
+    $("#feedback-panel").hidden = false;
+    setTimeout(function () { try { f.elements.message.focus(); } catch (e) {} }, 50);
+  }
+  function closeFeedback() { $("#feedback-panel").hidden = true; }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-feedback]"); if (!b) return;
+    e.preventDefault(); openFeedback(b.dataset.feedback || "");
+  });
+  $$("[data-fb-close]").forEach(function (b) { b.onclick = closeFeedback; });
+  $("#feedback-panel").addEventListener("click", function (e) { if (e.target.id === "feedback-panel") closeFeedback(); });
+  $("#fb-form").elements.message.addEventListener("input", function () { $("#fb-count").textContent = this.value.length + " / 1000"; });
+  $("#fb-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = this, btn = $("#fb-send");
+    if (f.elements.message.value.trim().length < 3) { toast("Write a short message first"); return; }
+    btn.disabled = true; btn.textContent = "Sending…";
+    BE.sendFeedback({ kind: f.elements.kind.value, message: f.elements.message.value, contact: f.elements.contact.value, page: pageInfo(), device: deviceInfo() })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.error);
+        f.hidden = true; $("#fb-sent").hidden = false;
+      }).catch(function (err) { toast("Couldn't send", err.message || "Try again in a moment."); })
+      .then(function () { btn.disabled = false; btn.textContent = "Send"; });
+  });
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-fb-act]"); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (b.dataset.fbAct === "delete" && !b.classList.contains("confirm")) {
+      b.classList.add("confirm"); b.textContent = "Tap again";
+      setTimeout(function () { if (b.isConnected) { b.classList.remove("confirm"); b.textContent = "Delete"; } }, 4000);
+      return;
+    }
+    b.disabled = true;
+    api({ action: "feedback_action", act: b.dataset.fbAct, id: b.dataset.id }).then(function (r) {
+      if (!r.ok) throw new Error(r.error);
+      loadAdmin();
+    }).catch(function (err) { b.disabled = false; toast("Couldn't do that", err.message); });
+  });
 
   /* ---------------- submit modal ---------------- */
   var modal = $("#modal"), form = $("#submit-form"), kind = "meet", picked = null, pickMarker = null;
