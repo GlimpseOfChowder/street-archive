@@ -1212,7 +1212,7 @@
     else b = "<span class='tag tag-live'>✓ " + esc(ROLE_LABEL[m.role] || "Member") + "</span><button class='btn sm' data-leave='" + id + "' data-what='leave'>Leave</button>";
     if (ROLE.admin && !runsCrew(c.id)) b += "<button class='btn sm' data-manage='" + id + "'>Manage</button>";
     if (!AUTH_ON) b = "";
-    return "<div class='crew-btns'><a href='#' class='crew-count' data-crew-view='" + id + "'>👥 " + n + " member" + (n === 1 ? "" : "s") + "</a>" + b + "</div>";
+    return "<div class='crew-btns'><a href='#' class='crew-count' data-crew-view='" + id + "'>👥 " + n + " member" + (n === 1 ? "" : "s") + " <span class='chev-r'>›</span></a>" + b + "</div>";
   }
   document.addEventListener("click", function (e) {
     var cv = e.target.closest("[data-crew-view]");

@@ -508,8 +508,10 @@ a.mname { color: var(--text); text-decoration: none; }
 .car-ph { aspect-ratio: 16 / 6; font-size: 28px; }
 
 /* crew page */
-.pop .crew-count { color: var(--muted); font-size: 13px; text-decoration: none; }
-.pop .crew-count:hover { color: var(--acc); text-decoration: underline; }
+.pop .crew-count { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--text); font-size: 13px; font-weight: 600; text-decoration: none; }
+.pop .crew-count .chev-r { color: var(--acc); font-size: 16px; line-height: 1; font-weight: 700; }
+.pop .crew-count:hover, .pop .crew-count:active { border-color: var(--acc); color: var(--acc); }
 .crew-head { display: flex; align-items: center; gap: 12px; margin: -4px 0 8px; }
 .crew-head > div { flex: 1; }
 .crew-head img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 2px solid var(--c); }
