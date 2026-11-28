@@ -18,7 +18,7 @@ Browsing is open to everyone; posting needs a Google account.
 | `data/crews.js`, `data/events.js` | Optional hard-coded entries (empty — everything lives in Supabase now). |
 | `privacy.html` | Privacy policy (linked from the footer and the Google sign-in screen). |
 | `club_logos/` | Crew logos (type just the file name in the crew form). |
-| `supabase/` | Database setup: `schema.sql` + `update-1…6` (all applied), the `ics` calendar function, and `keep-alive.yml`. |
+| `supabase/` | Database setup: `schema.sql` + `update-1…7` (all applied), the `ics` calendar function, and `keep-alive.yml`. |
 | `.github/workflows/keep-alive.yml` | (on GitHub only) pings Supabase daily so the free project never pauses; emails you if it's down. |
 | `beta/` | Test copy of the site — try changes at `…/street-archive/beta/` before replacing the main files. |
 | `google-apps-script/` | The old Google Sheet backend (retired; kept for reference). |
@@ -73,6 +73,13 @@ Tabs **Pending / Reported / Live / Archived**, filtered by **Meets / Crews / Sho
   Meet host/Organizer, First meet/Regular/Veteran, Garage/Collector, Street Archive admin.
 - **Verify a crew:** Supabase → Table Editor → `crews` → tick `verified` (blue ✔ on the map and profiles).
 - Crew pages: tap "👥 N members ›" in a crew popup — members, crew garage, upcoming meets.
+
+## Feedback
+
+- **💬 Feedback** in the account menu (and the panel footer on desktop) — works signed in or not.
+  Sends type (bug / idea / other), message, optional contact, plus the screen and device type.
+- Read it in **Admin panel → Feedback** (Mark done / Reopen / Delete); new ones add to the "Admin panel · N" count.
+- Limits: 5 a day per signed-in user, 20 an hour for all signed-out visitors together. Stored in the `feedback` table (admin-only).
 
 ## Free-plan limits (Supabase)
 
