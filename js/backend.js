@@ -297,6 +297,33 @@
     });
   }
 
+  /* ---------- feedback ---------- */
+  // Works signed in or not; only the admin can read it back.
+  function sendFeedback(d) {
+    var msg = multiline(d.message, 1000);
+    if (msg.length < 3) return Promise.resolve({ ok: false, error: "Tell us a little more." });
+    return ready.then(function () {
+      return sb.from("feedback").insert({ kind: ["bug", "idea", "other"].indexOf(d.kind) > -1 ? d.kind : "other", message: msg,
+        contact: clean(d.contact, 200), page: clean(d.page, 300), device: clean(d.device, 300) });
+    }).then(function (r) { if (r.error) throw r.error; return { ok: true }; })
+      .catch(function (e) { return { ok: false, error: friendly(e) }; });
+  }
+  function feedbackList() {
+    return sb.from("feedback").select("id,kind,message,contact,page,device,status,created_at,user_id,author:user_id(display_name)")
+      .order("created_at", { ascending: false }).limit(200).then(function (r) {
+        if (r.error) throw r.error;
+        return { ok: true, items: r.data.map(function (x) {
+          return { id: x.id, kind: x.kind, message: x.message, contact: x.contact, page: x.page, device: x.device, status: x.status,
+                   at: toLocal(x.created_at).replace("T", " "), user_id: x.user_id || "", by: x.author && x.author.display_name ? x.author.display_name : "" };
+        }) };
+      });
+  }
+  function feedbackAction(d) {
+    var q = sb.from("feedback");
+    var r = d.act === "delete" ? q.delete().eq("id", d.id) : q.update({ status: d.act === "reopen" ? "new" : "done" }).eq("id", d.id);
+    return r.select("id").then(expectOne);
+  }
+
   /* ---------- crews: membership ---------- */
   // Your crews (any status) + how many join requests wait in crews you run.
   function myCrews() {
@@ -396,11 +423,11 @@
     var c = function (tbl, col, val) { return sb.from(tbl).select(col === "status" && tbl === "crew_members" ? "crew_id" : "id", { count: "exact", head: true }).eq(col, val); };
     var qs = [c("meets", "status", "pending"), c("crews", "status", "pending"), c("places", "status", "pending"),
               c("meets", "status", "flagged"), c("crews", "status", "flagged"), c("places", "status", "flagged"),
-              c("crew_members", "status", "pending")];
+              c("crew_members", "status", "pending"), sb.from("feedback").select("id", { count: "exact", head: true }).eq("status", "new")];
     return Promise.all(qs).then(function (res) {
       res.forEach(function (r) { if (r.error) throw r.error; });
       var n = res.map(function (r) { return r.count || 0; });
-      return { ok: true, pending: n[0] + n[1] + n[2], reported: n[3] + n[4] + n[5], requests: n[6] };
+      return { ok: true, pending: n[0] + n[1] + n[2], reported: n[3] + n[4] + n[5], requests: n[6], feedback: n[7] };
     });
   }
 
@@ -487,6 +514,8 @@
       if (d.action === "member") return memberAction(d);
       if (d.action === "join_requests") return joinRequests();
       if (d.action === "admin_counts") return adminCounts();
+      if (d.action === "feedback_list") return feedbackList();
+      if (d.action === "feedback_action") return feedbackAction(d);
       if (d.action === "admin_list") return adminList();
       if (String(d.action || "").indexOf("admin_") === 0) return adminAction(d);
       return { ok: false, error: "Unknown action." };
@@ -515,6 +544,7 @@
   window.SA_BACKEND = {
     ready: ready,
     load: load,
+    sendFeedback: sendFeedback,
     crewPanel: function (d) { return ready.then(function () { return crewPanel(d); }).catch(function (e) { return { ok: false, error: friendly(e) }; }); },
     profile: function (d) { return ready.then(function () { return profile(d); }).catch(function (e) { return { ok: false, error: friendly(e) }; }); },
     going: function (d) { return going(d).catch(function (e) { return { ok: false, error: friendly(e) }; }); },
