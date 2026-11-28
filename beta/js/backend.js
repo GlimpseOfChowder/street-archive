@@ -336,7 +336,12 @@
       sb.from("meets").select("id,title,start_at,status,visibility,created_by,author:created_by(display_name)").eq("host_crew", d.crew_id).order("start_at", { ascending: false }).limit(30)
     ]).then(function (res) {
       res.forEach(function (r) { if (r.error) throw r.error; });
-      return { ok: true,
+      var ids = res[0].data.filter(function (m) { return m.status === "active"; }).map(function (m) { return m.user_id; });
+      var carsQ = ids.length ? sb.from("cars").select("id,owner,year,make,model,nickname,kind,photo_url").in("owner", ids).order("created_at").limit(60) : Promise.resolve({ data: [] });
+      return Promise.resolve(carsQ).then(function (cr) { if (cr.error) throw cr.error; return [res, cr.data || []]; });
+    }).then(function (both) {
+      var res = both[0], cars = both[1];
+      return { ok: true, cars: cars,
         members: res[0].data.map(function (m) {
           var pr = m.profile || {};
           return { user_id: m.user_id, role: m.role, status: m.status, name: pr.display_name || "Member", avatar: pr.avatar_url || "", since: toLocal(m.created_at) };
@@ -510,6 +515,7 @@
   window.SA_BACKEND = {
     ready: ready,
     load: load,
+    crewPanel: function (d) { return ready.then(function () { return crewPanel(d); }).catch(function (e) { return { ok: false, error: friendly(e) }; }); },
     profile: function (d) { return ready.then(function () { return profile(d); }).catch(function (e) { return { ok: false, error: friendly(e) }; }); },
     going: function (d) { return going(d).catch(function (e) { return { ok: false, error: friendly(e) }; }); },
     memberCounts: memberCounts,
