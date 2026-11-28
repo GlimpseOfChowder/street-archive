@@ -541,3 +541,9 @@ a.mname { color: var(--text); text-decoration: none; }
 .fb-msg { margin: 6px 0; white-space: normal; }
 .fb-done { opacity: .6; }
 .acct-fb { margin-top: 10px; width: 100%; }
+
+/* profile photo */
+.avatar-edit { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.avatar-edit > div { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.avatar-edit .muted { width: 100%; }
+.avatar-pick { cursor: pointer; }
