@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Covered+By+Your+Grace&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=20261128q">
+  <link rel="stylesheet" href="styles.css?v=20261128r">
 </head>
 <body>
 
@@ -243,6 +243,25 @@
   </div>
 
   <!-- ===== Admin panel ===== -->
+  <div id="turf-panel" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="turf-title">
+      <button class="modal-x" data-turf-close aria-label="Close">×</button>
+      <h2 id="turf-title">Add turf location</h2>
+      <p class="muted small">Another spot your crew holds. It shows on the map with your crew's name and logo.</p>
+      <form id="turf-form">
+        <div class="row">
+          <label>Area <span class="muted">(optional)</span><input name="area" maxlength="80" placeholder="Angeles, Pampanga"></label>
+          <label>Turf radius (km)<input name="radius" type="number" min="0.5" max="30" step="0.5" value="3"></label>
+        </div>
+        <div class="pick">
+          <button type="button" id="turf-pick" class="btn">📍 Pick location on map</button>
+          <span id="turf-coords" class="muted">No location yet</span>
+        </div>
+        <div class="modal-actions"><button type="button" class="btn" data-turf-close>Cancel</button><button id="turf-save" type="submit" class="btn btn-accent">Save</button></div>
+      </form>
+    </div>
+  </div>
+
   <div id="feedback-panel" class="modal" hidden>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="fb-title">
       <button class="modal-x" data-fb-close aria-label="Close">×</button>
@@ -355,10 +374,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://unpkg.com/@supabase/supabase-js@2.119.2/dist/umd/supabase.js"></script>
-  <script src="js/config.js?v=20261128q"></script>
-  <script src="js/backend.js?v=20261128q"></script>
-  <script src="data/crews.js?v=20261128q"></script>
-  <script src="data/events.js?v=20261128q"></script>
-  <script src="script.js?v=20261128q"></script>
+  <script src="js/config.js?v=20261128r"></script>
+  <script src="js/backend.js?v=20261128r"></script>
+  <script src="data/crews.js?v=20261128r"></script>
+  <script src="data/events.js?v=20261128r"></script>
+  <script src="script.js?v=20261128r"></script>
 </body>
 </html>

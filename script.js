@@ -213,16 +213,28 @@
     return "url(#" + id + ")";
   }
 
-  // Crews whose circle turfs share (roughly) the same centre share one turf (striped in both colours).
+  // Every turf location: each crew's main turf + any extra locations it added (same name & logo).
+  // Turfs that share (roughly) the same centre are drawn as one (striped in both crews' colours).
+  var EXTRA_TURFS = (REMOTE.turfs || []).filter(function (x) { return crewById[x.crew_id] && num(x.lat) !== null && num(x.lng) !== null; });
+  var turfPoints = [];
+  CREWS.forEach(function (c) { if (c.turf) turfPoints.push({ crew: c, turf: c.turf, area: c.area, main: true }); });
+  EXTRA_TURFS.forEach(function (x) {
+    var c = crewById[x.crew_id];
+    turfPoints.push({ crew: c, turf: { center: [num(x.lat), num(x.lng)], radius: Math.round((num(x.radius_km) || 3) * 1000) }, area: str(x.area) || c.area, main: false, id: x.id });
+  });
   var turfs = [];
-  CREWS.forEach(function (c) {
-    if (!c.turf) return;
-    if (c.turf.center) {
-      var g = turfs.find(function (t) { return t.center && km(t.center, c.turf.center) < 0.6; });
-      if (g) { g.crews.push(c); g.radius = Math.max(g.radius, c.turf.radius || 3000); return; }
-      turfs.push({ center: c.turf.center, radius: c.turf.radius || 3000, crews: [c] });
-    } else if (c.turf.polygon) {
-      turfs.push({ polygon: c.turf.polygon, crews: [c] });
+  turfPoints.forEach(function (pt) {
+    var c = pt.crew, tf = pt.turf;
+    if (tf.center) {
+      var g = turfs.find(function (t) { return t.center && km(t.center, tf.center) < 0.6; });
+      if (g) {
+        if (g.crews.indexOf(c) < 0) g.crews.push(c);
+        if (pt.main) g.mains.push(c.id);
+        g.radius = Math.max(g.radius, tf.radius || 3000); return;
+      }
+      turfs.push({ center: tf.center, radius: tf.radius || 3000, crews: [c], area: pt.area, mains: pt.main ? [c.id] : [] });
+    } else if (tf.polygon) {
+      turfs.push({ polygon: tf.polygon, crews: [c], area: pt.area, mains: pt.main ? [c.id] : [] });
     }
   });
 
@@ -258,13 +270,14 @@
     var m = L.marker(pos, { icon: icon, title: names, riseOnHover: true })
       .bindPopup(function () { return turfPopup(t); }, { maxWidth: Math.min(300, window.innerWidth - 50), autoPanPaddingTopLeft: [12, 80], autoPanPaddingBottomRight: [12, 90] });
     blipLayer.addLayer(m);
-    t.crews.forEach(function (c) { crewMarker[c.id] = m; c._turf = t; c._pos = pos; });
+    // "Show on map" / share links go to a crew's main turf
+    t.crews.forEach(function (c) { if (t.mains.indexOf(c.id) > -1 || !crewMarker[c.id]) { crewMarker[c.id] = m; c._turf = t; c._pos = pos; } });
   });
 
   function turfPopup(t) {
     var html = "<div class='pop'>";
     html += "<h3>" + esc(t.crews.map(function (c) { return c.name; }).join(" & ")) + "</h3>";
-    html += "<div class='sub'>" + esc(t.crews[0].area || "") + "</div>";
+    html += "<div class='sub'>" + esc(t.area || t.crews[0].area || "") + "</div>";
     t.crews.forEach(function (c) {
       var link = safeUrl(c.link);
       html += "<div class='crew-row' style='--c:" + esc(c.color) + "'>" +
@@ -775,6 +788,11 @@
     q = q.toLowerCase();
     var out = [];
     CREWS.forEach(function (c) { if ((c.name + " " + (c.area || "") + " " + (c.tags || []).join(" ")).toLowerCase().indexOf(q) > -1) out.push({ kind: "Crew", label: c.name, sub: c.area, go: function () { focusCrew(c.id); } }); });
+    EXTRA_TURFS.forEach(function (x) {
+      var c = crewById[x.crew_id];
+      if (x.area && (c.name + " " + x.area).toLowerCase().indexOf(q) > -1 && (c.area || "").toLowerCase().indexOf(q) < 0)
+        out.push({ kind: "Crew", label: c.name, sub: x.area, go: function () { map.flyTo([num(x.lat), num(x.lng)], 13); } });
+    });
     PLACES.forEach(function (p) { if ((p.name + " " + (p.area || "") + " " + p.tags.join(" ") + " " + catOf(p).label).toLowerCase().indexOf(q) > -1) out.push({ kind: catOf(p).label, label: p.name, sub: p.area, go: function () { focusPlace(p.id); } }); });
     EVENTS.forEach(function (e) { if ((e.title + " " + (e.place || "")).toLowerCase().indexOf(q) > -1) out.push({ kind: "Meet", label: e.title, sub: fmtFull.format(e.startD), go: function () { focusMeet(e.id); } }); });
     return out.slice(0, 8);
@@ -1324,8 +1342,10 @@
     var rank = { owner: 0, admin: 1, member: 2 };
     active.sort(function (a, b) { return rank[a.role] - rank[b.role]; });
     var h = "", c = crewById[id] || {}, link = safeUrl(c.link);
+    var extras = EXTRA_TURFS.filter(function (x) { return x.crew_id === id; });
     h += "<div class='crew-head' style='--c:" + esc(c.color || "#ffd400") + "'>" + (c.logo ? "<img src='" + esc(c.logo) + "' alt=''>" : "") +
-      "<div><div class='muted small'>" + esc(c.area || "") + (c.verified ? " · <span class='verified'>✔</span> Verified crew" : "") + "</div>" +
+      "<div><div class='muted small'>" + esc([c.area].concat(extras.map(function (x) { return x.area; })).filter(Boolean).join(" · ")) +
+      (c.verified ? " · <span class='verified'>✔</span> Verified crew" : "") + "</div>" +
       (link ? "<a class='prof-link' href='" + esc(link) + "' target='_blank' rel='noopener'>Crew page ↗</a>" : "") + "</div>" +
       (c.turf ? "<button class='btn sm' data-goto-crew='" + esc(id) + "'>Show on map</button>" : "") + "</div>";
     if (!canMembers && AUTH_ON) {
@@ -1336,6 +1356,18 @@
         : "<span class='tag tag-live'>✓ You're a " + esc((ROLE_LABEL[mm.role] || "member").toLowerCase()) + "</span>") + "</div>";
     }
     if (canMembers && !hasOwner) h += "<p class='crew-note'>This crew has no leader yet. When its leader asks to join, tap <b>Accept as owner</b>.</p>";
+    if (canMembers && c.turf) {
+      h += "<h5>Turf locations <b>" + (1 + extras.length) + "</b></h5><ul class='member-list'>" +
+        "<li><span class='mname'>" + esc(c.area || "Main turf") + "<small>Main · " + ((c.turf.radius || 3000) / 1000) + " km · change it in Edit crew details</small></span>" +
+        "<button class='btn sm' data-turf-show='" + esc(c.turf.center.join(",")) + "'>Show</button></li>" +
+        extras.map(function (x) {
+          return "<li><span class='mname'>" + esc(x.area || "Extra turf") + "<small>" + num(x.radius_km) + " km</small></span><span class='mbtns'>" +
+            "<button class='btn sm' data-turf-show='" + esc(x.lat + "," + x.lng) + "'>Show</button>" +
+            "<button class='btn sm' data-turf-edit='" + esc(x.id) + "'>Edit</button>" +
+            "<button class='btn sm btn-danger' data-turf-del='" + esc(x.id) + "'>Remove</button></span></li>";
+        }).join("") + "</ul>" +
+        (extras.length < 9 ? "<div class='crew-actions'><button class='btn sm' data-turf-new='" + esc(id) + "'>+ Add turf location</button></div>" : "");
+    }
     h += "<div class='crew-actions'>" +
       (canMembers ? "<button class='btn sm btn-accent' data-crew-newmeet='" + esc(id) + "'>+ Crew meet</button>" : "") +
       (canMembers ? "<button class='btn sm' data-edit='" + esc(id) + "' data-kind='crew'>Edit crew details</button>" : "") + "</div>";
@@ -1740,6 +1772,64 @@
     BE.ready.then(loadMyRsvps);
   }
 
+  /* ---------------- extra turf locations: add / edit / remove ---------------- */
+  var turfEditing = null, savedPicked = null;
+  function openTurfForm(crewId, turf) {
+    turfEditing = { crew_id: crewId, id: turf ? turf.id : null };
+    $("#crew-panel").hidden = true;
+    savedPicked = picked;                      // don't disturb a half-filled post form
+    picked = turf ? [num(turf.lat), num(turf.lng)] : null;
+    var f = $("#turf-form"); f.reset();
+    f.elements.area.value = turf ? turf.area || "" : "";
+    f.elements.radius.value = turf ? num(turf.radius_km) : 3;
+    $("#turf-title").textContent = (turf ? "Edit turf location" : "Add turf location") + " · " + ((crewById[crewId] || {}).name || "");
+    $("#turf-coords").textContent = picked ? picked.join(", ") : "No location yet";
+    if (picked) setPin(picked, true);
+    $("#turf-panel").hidden = false;
+  }
+  function closeTurfForm(reopenCrew) {
+    $("#turf-panel").hidden = true; $("#turf-panel").classList.remove("picking");
+    if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; }
+    picked = savedPicked; savedPicked = null;
+    var cid = turfEditing && turfEditing.crew_id; turfEditing = null;
+    if (reopenCrew && cid) openCrewPanel(cid);
+  }
+  $("#turf-pick").onclick = function () { startPick($("#turf-panel")); };
+  $$("[data-turf-close]").forEach(function (b) { b.onclick = function () { closeTurfForm(true); }; });
+  $("#turf-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!picked) { toast("Pick the location first", "Tap “📍 Pick location on map”."); return; }
+    var f = this, btn = $("#turf-save"); btn.disabled = true; btn.textContent = "Saving…";
+    api({ action: "save_turf", id: turfEditing.id, crew_id: turfEditing.crew_id, area: f.elements.area.value, radius: f.elements.radius.value, lat: picked[0], lng: picked[1] })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.error);
+        toast("Turf saved ✅", "Refreshing the map…", 2500);
+        setTimeout(function () { location.reload(); }, 900);
+      }).catch(function (err) { toast("Couldn't save", err.message); })
+      .then(function () { btn.disabled = false; btn.textContent = "Save"; });
+  });
+  document.addEventListener("click", function (e) {
+    var nw = e.target.closest("[data-turf-new]"), ed = e.target.closest("[data-turf-edit]"), dl = e.target.closest("[data-turf-del]"), sh = e.target.closest("[data-turf-show]");
+    if (!nw && !ed && !dl && !sh) return;
+    e.preventDefault(); e.stopPropagation();
+    if (sh) { var ll = sh.dataset.turfShow.split(",").map(Number); $("#crew-panel").hidden = true; panelCrew = null; closePanelOnMobile(); map.flyTo(ll, 13); return; }
+    if (nw) { openTurfForm(nw.dataset.turfNew, null); return; }
+    var x = EXTRA_TURFS.filter(function (t) { return t.id === (ed || dl).dataset.turfEdit || t.id === (ed || dl).dataset.turfDel; })[0];
+    if (!x) return;
+    if (ed) { openTurfForm(x.crew_id, x); return; }
+    if (!dl.classList.contains("confirm")) {
+      dl.classList.add("confirm"); dl.textContent = "Tap again";
+      setTimeout(function () { if (dl.isConnected) { dl.classList.remove("confirm"); dl.textContent = "Remove"; } }, 4000);
+      return;
+    }
+    dl.disabled = true;
+    api({ action: "delete_turf", id: x.id }).then(function (r) {
+      if (!r.ok) throw new Error(r.error);
+      toast("Turf removed", "Refreshing the map…", 2500);
+      setTimeout(function () { location.reload(); }, 900);
+    }).catch(function (err) { dl.disabled = false; toast("Couldn't remove", err.message); });
+  });
+
   /* ---------------- feedback (anyone can send; admin reads it in the Admin panel) ---------------- */
   function deviceInfo() {
     var ua = navigator.userAgent || "";
@@ -1928,7 +2018,7 @@
 
   // Picking a spot: tap the map, drag the pin, search a place/address, paste
   // coordinates or a Google Maps link, or use the phone's GPS.
-  var pickBefore = null;
+  var pickBefore = null, pickHost = null;
   function setPin(ll, fly) {
     picked = [+(+ll[0]).toFixed(6), +(+ll[1]).toFixed(6)];
     if (pickMarker) pickMarker.setLatLng(picked);
@@ -1936,14 +2026,15 @@
       pickMarker = L.marker(picked, { draggable: true }).addTo(map);
       pickMarker.on("dragend", function () { var p = pickMarker.getLatLng(); setPin([p.lat, p.lng]); });
     }
-    $("#pick-coords").textContent = picked.join(", ");
+    $(pickHost && pickHost.id === "turf-panel" ? "#turf-coords" : "#pick-coords").textContent = picked.join(", ");
     if (fly) map.flyTo(picked, Math.max(map.getZoom(), 17));
     $("#pick-done").hidden = false;
     $("#pick-msg").textContent = "Pin set — drag it or tap the map to adjust";
   }
-  function startPick() {
+  function startPick(host) {
+    pickHost = host && host.nodeType ? host : modal;
     pickBefore = picked ? picked.slice() : null;
-    modal.classList.add("picking"); $("#pick-hint").hidden = false;
+    pickHost.classList.add("picking"); $("#pick-hint").hidden = false;
     $("#pick-done").hidden = !picked; $("#pick-results").hidden = true; $("#pick-q").value = "";
     $("#pick-msg").textContent = picked ? "Drag the pin or tap the map to move it" : "Search above, or tap the map to drop the pin";
     map.getContainer().classList.add("picking-map");
@@ -1952,7 +2043,7 @@
   function onPick(e) { map.closePopup(); setPin([e.latlng.lat, e.latlng.lng]); }
   function endPick() {
     map.off("click", onPick);
-    modal.classList.remove("picking"); $("#pick-hint").hidden = true;
+    (pickHost || modal).classList.remove("picking"); $("#pick-hint").hidden = true;
     map.getContainer().classList.remove("picking-map");
   }
   // Coordinates or a Google Maps URL pasted in the box.
@@ -2032,7 +2123,7 @@
   $("#pick-done").onclick = endPick;
   $("#pick-cancel").onclick = function () {
     if (pickBefore) setPin(pickBefore);
-    else { picked = null; if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; } $("#pick-coords").textContent = "No location yet"; }
+    else { picked = null; if (pickMarker) { map.removeLayer(pickMarker); pickMarker = null; } $(pickHost && pickHost.id === "turf-panel" ? "#turf-coords" : "#pick-coords").textContent = "No location yet"; }
     endPick();
   };
 
