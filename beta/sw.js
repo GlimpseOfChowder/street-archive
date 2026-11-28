@@ -3,7 +3,7 @@
      saved copy when offline or the signal is bad.
    - Versioned libraries (Leaflet, Supabase from unpkg): saved once, reused.
    - Database, sign-in, map tiles and everything else: not touched. */
-var VERSION = "sa-20261128w";
+var VERSION = "sa-20261129x";
 var CORE = ["./", "index.html", "styles.css", "script.js", "js/config.js", "js/backend.js",
             "data/crews.js", "data/events.js", "club_logos/site_logo.png", "icons/icon-192.png", "manifest.webmanifest"];
 
@@ -15,6 +15,27 @@ self.addEventListener("activate", function (e) {
     return Promise.all(keys.filter(function (k) { return k !== VERSION; }).map(function (k) { return caches.delete(k); }));
   }).then(function () { return self.clients.claim(); }));
 });
+// Phone notifications (join requests, posts waiting for approval)
+self.addEventListener("push", function (e) {
+  var d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (x) { d = { title: "Street Archive", body: e.data ? e.data.text() : "" }; }
+  e.waitUntil(self.registration.showNotification(d.title || "Street Archive", {
+    body: d.body || "", icon: "icons/icon-192.png", badge: "icons/icon-192.png",
+    tag: d.tag || undefined, renotify: !!d.tag, data: { url: d.url || "./" }
+  }));
+});
+self.addEventListener("notificationclick", function (e) {
+  e.notification.close();
+  var url = (e.notification.data && e.notification.data.url) || "./";
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (list) {
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      if (c.url.indexOf(self.registration.scope) === 0 && "focus" in c) { return c.focus().then(function (w) { return w && w.navigate ? w.navigate(url) : w; }); }
+    }
+    return self.clients.openWindow(url);
+  }));
+});
+
 self.addEventListener("fetch", function (e) {
   var req = e.request;
   if (req.method !== "GET") return;
