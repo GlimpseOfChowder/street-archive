@@ -14,7 +14,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overscroll-behavior-y: none; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overscroll-behavior-y: none;
+  touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 button { font: inherit; color: inherit; cursor: pointer; }
 input, select, textarea { font: inherit; }
 [hidden] { display: none !important; }
@@ -410,12 +411,23 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
   .layer-name { right: 62px; bottom: calc(var(--sheet-visible) + 112px); }
   .leaflet-bottom { bottom: var(--sheet-visible); transition: bottom .32s; }
   body.sheet-full .hud-controls, body.sheet-full .leaflet-bottom { opacity: 0; pointer-events: none; }
-  .legend { display: none; }
+  .legend { left: 10px; bottom: calc(var(--sheet-visible) + 12px); flex-direction: column; gap: 5px; padding: 7px 9px;
+    font-size: 11px; transition: bottom .32s, opacity .2s; background: rgba(16,19,26,.88); backdrop-filter: blur(6px); }
+  .legend .lg { width: 10px; height: 10px; margin-right: 5px; }
+  body.sheet-full .legend { opacity: 0; pointer-events: none; }
   .leaflet-control-zoom { display: none; }
   .toasts { top: auto; bottom: calc(var(--sheet-visible) + 12px); right: 10px; left: 10px; width: auto; transform: none; }
 
-  .leaflet-popup-content { min-width: 0; margin: 12px 14px; }
-  .pop .actions .btn { flex: 1 1 calc(50% - 6px); }
+  /* popups: a fixed, comfortable width on phones (short shop popups used to shrink to a sliver) */
+  .leaflet-popup-content { width: min(290px, calc(100vw - 64px)) !important; min-width: 0; margin: 12px 14px; }
+  .pop .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .pop .actions .btn { width: 100%; justify-content: center; text-align: center; }
+  .pop .actions .btn-accent:first-child { grid-column: 1 / -1; }
+  .pop .actions .btn:last-child:nth-child(odd):not(:first-child) { grid-column: 1 / -1; }
+  .pop .actions .btn-accent:first-child ~ .btn:last-child:nth-child(odd) { grid-column: auto; }
+  .pop .actions .btn-accent:first-child ~ .btn:last-child:nth-child(even) { grid-column: 1 / -1; }
+  .admin-row { gap: 6px; }
+  .admin-row .btn { flex: 1 1 auto; }
 
   /* submit form = full-screen sheet */
   .modal { padding: 0; place-items: end stretch; }
