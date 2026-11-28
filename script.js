@@ -1891,6 +1891,85 @@
     }).catch(function (err) { dl.disabled = false; toast("Couldn't remove", err.message); });
   });
 
+  /* ---------------- installable app: Android install button, iPhone guide, in-app browsers ---------------- */
+  (function () {
+    var ua = navigator.userAgent || "";
+    var isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    var isAndroid = /Android/.test(ua);
+    var inApp = /FBAN|FBAV|FB_IAB|FBIOS|Instagram|Messenger|Line\/|TikTok|musical_ly/i.test(ua);
+    var standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+    var deferred = null;
+
+    if ("serviceWorker" in navigator && (location.protocol === "https:" || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) {
+      var reg = function () { navigator.serviceWorker.register("sw.js").catch(function () {}); };
+      if (document.readyState === "complete") reg(); else window.addEventListener("load", reg);
+    }
+    if (standalone) return;                                  // already running as the app
+
+    function canOffer() { return !!deferred || isIOS || inApp || isAndroid; }
+    function showButtons() { $$("[data-install]").forEach(function (b) { b.hidden = !canOffer(); }); }
+    window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); deferred = e; showButtons(); maybeBanner(); });
+    window.addEventListener("appinstalled", function () {
+      deferred = null; $("#install-banner").hidden = true; showButtons();
+      toast("Installed ✅", "Open Street Archive from your home screen.", 6000);
+    });
+    showButtons();
+
+    function guide() {
+      var h;
+      if (inApp) {
+        h = "<p>You're viewing this inside another app (like Facebook or Messenger), which can't install apps.</p>" +
+          "<ol class='steps'><li>Tap <b>⋯</b> or <b>⋮</b> in the top corner.</li>" +
+          "<li>Choose <b>Open in " + (isIOS ? "Safari" : "Chrome") + "</b> (or “Open in external browser”).</li>" +
+          "<li>Then tap <b>📲 Install</b> in Street Archive's account menu.</li></ol>";
+      } else if (isIOS) {
+        h = "<p>On iPhone, apps from websites are added from the Share menu — it takes 10 seconds:</p>" +
+          "<ol class='steps'><li>Tap the <b>Share</b> button <svg class='ios-share' viewBox='0 0 24 24' width='18' height='18' aria-label='Share icon'><path d='M12 3v12M7.5 7.5 12 3l4.5 4.5M7 10H5.5A1.5 1.5 0 0 0 4 11.5v8A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5v-8a1.5 1.5 0 0 0-1.5-1.5H17' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg> — at the bottom in Safari, or next to the address bar in Chrome.</li>" +
+          "<li>Scroll down and tap <b>Add to Home Screen</b> ⊞.<br><span class='muted small'>Don't see it? Tap “Edit Actions…” at the bottom and add it.</span></li>" +
+          "<li>Tap <b>Add</b>. Street Archive now opens full screen from your Home Screen.</li></ol>" +
+          "<p class='muted small'>You'll sign in once more inside the app — iPhone keeps apps separate from Safari.</p>";
+      } else if (isAndroid) {
+        h = "<ol class='steps'><li>Tap <b>⋮</b> (top-right in Chrome).</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li><li>Tap <b>Install</b>.</li></ol>";
+      } else {
+        h = "<p>In Chrome or Edge, click the <b>install icon</b> at the right end of the address bar, or open the browser menu and choose <b>Install Street Archive</b>.</p>" +
+          "<p class='muted small'>On a phone it's even better — open this site on your phone and tap Install.</p>";
+      }
+      $("#install-body").innerHTML = h;
+      $("#install-panel").hidden = false;
+    }
+    function install() {
+      $("#acct-menu").hidden = true;
+      if (deferred) {
+        deferred.prompt();
+        deferred.userChoice.then(function (c) { if (c && c.outcome === "accepted") $("#install-banner").hidden = true; deferred = null; showButtons(); });
+        return;
+      }
+      guide();
+    }
+    document.addEventListener("click", function (e) { if (e.target.closest("[data-install]")) { e.preventDefault(); install(); } });
+    $$("[data-install-close]").forEach(function (b) { b.onclick = function () { $("#install-panel").hidden = true; }; });
+    $("#install-panel").addEventListener("click", function (e) { if (e.target.id === "install-panel") $("#install-panel").hidden = true; });
+
+    // A small banner on phones, a few seconds after opening (not again for a week after "×").
+    var shown = false;
+    function maybeBanner() {
+      if (shown || !mq.matches || !canOffer()) return;
+      var until = +store.get("installSnooze", 0);
+      if (until && Date.now() < until) return;
+      shown = true;
+      setTimeout(function () {
+        $("#ib-title").textContent = inApp ? "Open in your browser to install" : "Get the Street Archive app";
+        $("#ib-sub").textContent = inApp ? "Facebook / Messenger can't install apps." : isIOS ? "Add it to your Home Screen — full screen, no browser bars." : "Full screen, one tap from your home screen.";
+        $("#ib-go").textContent = deferred ? "Install" : "How?";
+        $("#install-banner").hidden = false;
+      }, 5000);
+    }
+    $("#ib-go").onclick = function () { $("#install-banner").hidden = true; install(); };
+    $("#ib-close").onclick = function () { $("#install-banner").hidden = true; store.set("installSnooze", Date.now() + 7 * 864e5); };
+    if (isIOS || inApp) maybeBanner();
+    else if (isAndroid) setTimeout(function () { if (!deferred) maybeBanner(); }, 2500);   // browsers that never offer the install prompt
+  })();
+
   /* ---------------- feedback (anyone can send; admin reads it in the Admin panel) ---------------- */
   function deviceInfo() {
     var ua = navigator.userAgent || "";
