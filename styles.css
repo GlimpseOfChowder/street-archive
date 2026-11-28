@@ -460,3 +460,61 @@ form input:focus, form select:focus, form textarea:focus { outline: none; border
 @keyframes slideFromLeft { from { transform: translateX(-40px); opacity: .3; } to { transform: none; opacity: 1; } }
 .tab-body.slide-from-right { animation: slideFromRight .22s ease-out; }
 .tab-body.slide-from-left { animation: slideFromLeft .22s ease-out; }
+
+/* profiles, garage, pulling up */
+.verified { color: #3ea6ff; font-size: 12px; font-weight: 900; }
+.pop .posted-by { font-size: 13px; color: var(--muted); margin: 4px 0; }
+.pop .posted-by a, .going-list a, .mname[data-profile] { color: var(--text); text-decoration: none; }
+.pop .posted-by a:hover, .going-list a:hover, a.mname:hover { color: var(--acc); }
+.rsvp { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.03); }
+.rsvp-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
+.rsvp-top a { font-size: 13px; color: var(--acc); }
+.rsvp-btn { width: 100%; margin-top: 6px; }
+.rsvp-cars { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.going-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 180px; overflow-y: auto; }
+.going-list li { display: flex; flex-direction: column; }
+.going-list a { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.going-list small { color: var(--muted); font-size: 12px; margin-left: 30px; }
+.mav.sm { width: 24px; height: 24px; font-size: 10px; }
+.mav.lg { width: 64px; height: 64px; font-size: 20px; }
+.going-n { color: var(--acc); }
+.going-me { color: #39ff88; font-size: 12px; }
+.prof-kicker { margin: 0 0 6px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.prof-head { display: flex; gap: 14px; align-items: center; }
+.prof-head h2 { margin: 0; }
+.prof-link { color: var(--acc); font-size: 13px; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+.badge-chip { font-size: 12px; padding: 4px 9px; border-radius: 999px; background: rgba(255,214,10,.1); border: 1px solid rgba(255,214,10,.35); }
+.prof-bio { margin: 10px 0; white-space: normal; }
+#profile-panel h5 { margin: 16px 0 6px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+#profile-panel h5 b { color: var(--text); margin-left: 4px; }
+.prof-crews { display: flex; flex-wrap: wrap; gap: 8px; }
+.prof-crew { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px; border: 1px solid var(--line); border-left: 3px solid var(--c); border-radius: 10px; color: var(--text); text-decoration: none; }
+.prof-crew img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+.prof-crew span { display: flex; flex-direction: column; font-weight: 600; font-size: 14px; }
+.prof-crew small { color: var(--muted); font-weight: 400; font-size: 11px; }
+.garage { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.car-card { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: rgba(255,255,255,.03); display: flex; flex-direction: column; }
+.car-card img, .car-ph { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; background: #1a1e28; }
+.car-ph { display: grid; place-items: center; font-size: 36px; }
+.car-meta { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 4px; }
+.car-meta small { color: var(--muted); }
+.car-meta p { margin: 2px 0; font-size: 13px; color: var(--muted); }
+.car-meta .tag { align-self: flex-start; }
+.car-preview img { max-width: 100%; max-height: 200px; border-radius: 10px; display: block; margin: 6px 0; }
+.prof-form label, .car-form label { display: block; }
+.acct-actions { flex-wrap: wrap; }
+a.mname { color: var(--text); text-decoration: none; }
+.car-ph { aspect-ratio: 16 / 6; font-size: 28px; }
+
+/* crew page */
+.pop .crew-count { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--text); font-size: 13px; font-weight: 600; text-decoration: none; }
+.pop .crew-count .chev-r { color: var(--acc); font-size: 16px; line-height: 1; font-weight: 700; }
+.pop .crew-count:hover, .pop .crew-count:active { border-color: var(--acc); color: var(--acc); }
+.crew-head { display: flex; align-items: center; gap: 12px; margin: -4px 0 8px; }
+.crew-head > div { flex: 1; }
+.crew-head img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 2px solid var(--c); }
+.crew-garage { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.crew-garage .car-meta p { display: none; }
+.car-owner { font-size: 12px; color: var(--acc); text-decoration: none; }

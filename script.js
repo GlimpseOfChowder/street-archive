@@ -51,7 +51,7 @@
     return { id: str(r.id), name: str(r.name), area: str(r.area), link: str(r.link), logo: goodLogo(logo),
       color: /^#[0-9a-f]{6}$/i.test(str(r.color)) ? str(r.color) : "#ff3b3b",
       tags: str(r.tags) ? str(r.tags).split(",").map(str).filter(Boolean) : [],
-      turf: { center: [lat, lng], radius: Math.round((num(r.radius_km) || 3) * 1000) }, _src: "sheet" };
+      turf: { center: [lat, lng], radius: Math.round((num(r.radius_km) || 3) * 1000) }, verified: !!r.verified, _src: "sheet" };
   }
   function remotePlace(r) {
     var lat = num(r.lat), lng = num(r.lng);
@@ -66,7 +66,8 @@
     if (!str(r.id) || !str(r.title) || !str(r.start) || lat === null || lng === null) return null;
     return { id: str(r.id), title: str(r.title), type: str(r.type) || "meet", host: str(r.host),
       start: str(r.start), end: str(r.end) || undefined, place: str(r.place), coords: [lat, lng],
-      details: str(r.details), link: str(r.link), visibility: str(r.visibility) || "public", _src: "sheet" };
+      details: str(r.details), link: str(r.link), visibility: str(r.visibility) || "public",
+      by: str(r.by), by_id: str(r.by_id), _src: "sheet" };
   }
   var TZ = "Asia/Manila";
   var LABEL_ZOOM = 11;
@@ -120,6 +121,7 @@
   function initials(name) { return name.split(/\s+/).map(function (w) { return w[0]; }).join("").slice(0, 2).toUpperCase(); }
 
   /* ---------------- data prep ---------------- */
+  var GOING = REMOTE.going || {};   // meet id -> how many are pulling up
   var crewById = {};
   CREWS.forEach(function (c) { crewById[c.id] = c; c.color = c.color || "#ffd400"; });
 
@@ -268,6 +270,7 @@
       html += "<div class='crew-row' style='--c:" + esc(c.color) + "'>" +
         (c.logo ? "<img src='" + esc(c.logo) + "' alt=''>" : "") +
         "<div>" + (link ? "<a href='" + esc(link) + "' target='_blank' rel='noopener'>" + esc(c.name) + " ↗</a>" : "<b>" + esc(c.name) + "</b>") +
+        (c.verified ? " <span class='verified' title='Verified crew'>✔</span>" : "") +
         (c.tags && c.tags.length ? "<br>" + c.tags.map(function (x) { return "<span class='tag tag-type'>" + esc(x) + "</span>"; }).join("") : "") +
         "</div></div>" + crewButtons(c) + adminButtons("crew", c);
     });
@@ -409,6 +412,8 @@
     if (host) html += "<div class='crew-row' style='--c:" + esc(host.color) + "'>" + (host.logo ? "<img src='" + esc(host.logo) + "' alt=''>" : "") + "<div>Hosted by <a data-goto-crew='" + esc(host.id) + "' href='#'>" + esc(host.name) + "</a></div></div>";
     if (e.place) html += "<p>📍 " + esc(e.place) + "</p>";
     if (e.details) html += "<p>" + esc(e.details) + "</p>";
+    if (e.by_id) html += "<div class='posted-by'>Posted by <a href='#' data-profile='" + esc(e.by_id) + "'>" + esc(e.by || "a member") + "</a></div>";
+    html += rsvpBlock(e);
     html += "<div class='actions'>";
     html += "<button class='btn sm" + (reminders[e.id] ? " btn-accent" : "") + "' data-remind='" + esc(e.id) + "'>" + (reminders[e.id] ? "🔔 Reminder on" : "🔔 Remind me") + "</button>";
     html += "<button class='btn sm' data-ics='" + esc(e.id) + "'>📅 Calendar</button>";
@@ -725,7 +730,8 @@
       return "<li class='card' data-goto-meet='" + esc(e.id) + "' style='--c:" + esc(host ? host.color : "var(--acc)") + "'>" +
         "<div class='date'><b>" + esc(fmtDay.format(e.startD)) + "</b><span>" + esc(fmtMon.format(e.startD)) + "</span></div>" +
         "<div class='meta'><h4>" + (isNew(e) ? "<span class='tag tag-new'>New</span>" : "") + (e.sample ? "<span class='tag tag-sample'>Sample</span>" : "") + (rem[e.id] ? "🔔 " : "") + esc(e.title) + "</h4>" +
-        "<p><span class='countdown'>" + esc(countdown(e)) + "</span> · " + esc(fmtTime.format(e.startD)) + (host ? " · " + esc(host.name) : "") + dist + "</p>" +
+        "<p><span class='countdown'>" + esc(countdown(e)) + "</span> · " + esc(fmtTime.format(e.startD)) + (host ? " · " + esc(host.name) : "") + dist +
+        (GOING[e.id] ? " · <span class='going-n'>🚗 " + GOING[e.id] + "</span>" : "") + (MYRSVP && MYRSVP[e.id] !== undefined ? " <span class='going-me'>✓ going</span>" : "") + "</p>" +
         "<p>" + esc(e.place || "") + "</p></div></li>";
     }).join("");
   }
@@ -882,7 +888,7 @@
     if (!resp || !resp.credential) { toast("Sign-in failed", "Please try again."); return; }
     BE.signInWithGoogle(resp.credential).then(function (u) {
       auth = u;
-      renderAccount(); updateGate(); loadRole(); loadMyCrews();
+      renderAccount(); updateGate(); loadRole(); loadMyCrews(); MYCARS = null; loadMyRsvps();
       toast("Signed in", "Welcome, " + ((auth && auth.name) || "").split(" ")[0] + "!");
       // crew-only meets you belong to appear after a refresh of the data
       BE.load().then(function (d) { cacheSet(d); }).catch(function () {});
@@ -894,7 +900,7 @@
       var g = gis(); if (g) g.disableAutoSelect();
       renderAccount(); updateGate(); $("#acct-menu").hidden = true;
       ROLE = { admin: false, trusted: false }; $("#acct-admin").hidden = true; document.body.classList.remove("is-admin");
-      MY = {}; adminWaiting = 0; renderMyCrews();
+      MY = {}; adminWaiting = 0; renderMyCrews(); MYRSVP = {}; MYCARS = null; renderMeets();
       // forget crew-only meets on this device
       var c = cacheGet(); if (c && c.events) { c.events = c.events.filter(function (x) { return x.visibility !== "crew"; }); cacheSet(c); }
       toast("Signed out");
@@ -967,7 +973,7 @@
     BE.onAuthChange(function () {
       var was = auth && auth.id;
       auth = BE.user(); renderAccount(); updateGate();
-      if ((auth && auth.id) !== was) { loadRole(); loadMyCrews(); }   // signed in / out / switched account
+      if ((auth && auth.id) !== was) { loadRole(); loadMyCrews(); MYCARS = null; loadMyRsvps(); }   // signed in / out / switched account
     });
     $("#acct-btn").onclick = function (e) {
       e.stopPropagation();
@@ -1198,15 +1204,20 @@
   }
   // Buttons under a crew in its map popup.
   function crewButtons(c) {
-    if (c._src !== "sheet" || !AUTH_ON) return "";
+    if (c._src !== "sheet" || !BE) return "";
     var n = MEMBERS_N[c.id] || 0, m = MY[c.id], id = esc(c.id), b = "";
     if (!authValid() || !m) b = "<button class='btn sm btn-accent' data-join='" + id + "'>Request to join</button>";
     else if (m.status === "pending") b = "<span class='muted small'>Request sent</span><button class='btn sm' data-leave='" + id + "' data-what='cancel'>Cancel</button>";
     else if (runsCrew(c.id)) b = "<button class='btn sm btn-accent' data-manage='" + id + "'>Manage crew" + (m.requests ? " · " + m.requests + " new" : "") + "</button>";
     else b = "<span class='tag tag-live'>✓ " + esc(ROLE_LABEL[m.role] || "Member") + "</span><button class='btn sm' data-leave='" + id + "' data-what='leave'>Leave</button>";
     if (ROLE.admin && !runsCrew(c.id)) b += "<button class='btn sm' data-manage='" + id + "'>Manage</button>";
-    return "<div class='crew-btns'><span class='muted small'>👥 " + n + " member" + (n === 1 ? "" : "s") + "</span>" + b + "</div>";
+    if (!AUTH_ON) b = "";
+    return "<div class='crew-btns'><a href='#' class='crew-count' data-crew-view='" + id + "'>👥 " + n + " member" + (n === 1 ? "" : "s") + " <span class='chev-r'>›</span></a>" + b + "</div>";
   }
+  document.addEventListener("click", function (e) {
+    var cv = e.target.closest("[data-crew-view]");
+    if (cv) { e.preventDefault(); e.stopPropagation(); openCrewPanel(cv.dataset.crewView); }
+  });
   document.addEventListener("click", function (e) {
     var j = e.target.closest("[data-join]"), l = e.target.closest("[data-leave]"), mg = e.target.closest("[data-manage]");
     if (!j && !l && !mg) return;
@@ -1254,7 +1265,7 @@
   function loadCrewPanel() {
     var id = panelCrew; if (!id) return;
     $("#crew-panel-body").innerHTML = "<p class='muted'>Loading…</p>";
-    api({ action: "crew_panel", crew_id: id }).then(function (r) {
+    BE.crewPanel({ crew_id: id }).then(function (r) {
       if (!r.ok) throw new Error(r.error);
       if (panelCrew === id) renderCrewPanel(id, r);
     }).catch(function (e) { $("#crew-panel-body").innerHTML = "<p class='muted'>Couldn't load: " + esc(e.message || "") + "</p>"; });
@@ -1272,15 +1283,26 @@
     var active = r.members.filter(function (m) { return m.status === "active"; });
     var rank = { owner: 0, admin: 1, member: 2 };
     active.sort(function (a, b) { return rank[a.role] - rank[b.role]; });
-    var h = "";
-    if (!hasOwner) h += "<p class='crew-note'>This crew has no leader yet. When its leader asks to join, tap <b>Accept as owner</b>.</p>";
+    var h = "", c = crewById[id] || {}, link = safeUrl(c.link);
+    h += "<div class='crew-head' style='--c:" + esc(c.color || "#ffd400") + "'>" + (c.logo ? "<img src='" + esc(c.logo) + "' alt=''>" : "") +
+      "<div><div class='muted small'>" + esc(c.area || "") + (c.verified ? " · <span class='verified'>✔</span> Verified crew" : "") + "</div>" +
+      (link ? "<a class='prof-link' href='" + esc(link) + "' target='_blank' rel='noopener'>Crew page ↗</a>" : "") + "</div>" +
+      (c.turf ? "<button class='btn sm' data-goto-crew='" + esc(id) + "'>Show on map</button>" : "") + "</div>";
+    if (!canMembers && AUTH_ON) {
+      var mm = MY[id];
+      h += "<div class='crew-actions'>" + (!authValid() ? "<button class='btn sm btn-accent' data-join='" + esc(id) + "'>Request to join</button>"
+        : !mm ? "<button class='btn sm btn-accent' data-join='" + esc(id) + "'>Request to join</button>"
+        : mm.status === "pending" ? "<span class='muted small'>Your request is waiting for the crew's admins.</span>"
+        : "<span class='tag tag-live'>✓ You're a " + esc((ROLE_LABEL[mm.role] || "member").toLowerCase()) + "</span>") + "</div>";
+    }
+    if (canMembers && !hasOwner) h += "<p class='crew-note'>This crew has no leader yet. When its leader asks to join, tap <b>Accept as owner</b>.</p>";
     h += "<div class='crew-actions'>" +
       (canMembers ? "<button class='btn sm btn-accent' data-crew-newmeet='" + esc(id) + "'>+ Crew meet</button>" : "") +
       (canMembers ? "<button class='btn sm' data-edit='" + esc(id) + "' data-kind='crew'>Edit crew details</button>" : "") + "</div>";
     if (canMembers) {
       h += "<h5>Join requests <b>" + pending.length + "</b></h5>";
       h += pending.length ? "<ul class='member-list'>" + pending.map(function (m) {
-        return "<li><span class='mav'>" + av(m) + "</span><span class='mname'>" + esc(m.name) + "<small>asked " + esc(m.since.slice(0, 10)) + "</small></span><span class='mbtns'>" +
+        return "<li><span class='mav'>" + av(m) + "</span><a href='#' class='mname' data-profile='" + esc(m.user_id) + "'>" + esc(m.name) + "<small>asked " + esc(m.since.slice(0, 10)) + "</small></a><span class='mbtns'>" +
           (site && !hasOwner ? btn("make_owner", m.user_id, "Accept as owner", "btn-accent") + btn("accept", m.user_id, "Accept as member", "") : btn("accept", m.user_id, "Accept", "btn-accent")) +
           btn("decline", m.user_id, "Decline", "btn-danger") + "</span></li>";
       }).join("") + "</ul>" : "<p class='muted small'>No one waiting.</p>";
@@ -1293,9 +1315,27 @@
         if (m.role === "member" || iOwn || site) b += btn("remove", m.user_id, "Remove", "btn-danger");
       }
       if (site && m.role !== "owner") b += btn("make_owner", m.user_id, "Make owner", "");
-      return "<li><span class='mav'>" + av(m) + "</span><span class='mname'>" + esc(m.name) + (m.user_id === me ? " <small>(you)</small>" : "") + "</span>" +
+      return "<li><span class='mav'>" + av(m) + "</span><a href='#' class='mname' data-profile='" + esc(m.user_id) + "'>" + esc(m.name) + (m.user_id === me ? " <small>(you)</small>" : "") + "</a>" +
         "<span class='tag " + (m.role === "member" ? "tag-sample" : "tag-type") + "'>" + esc(ROLE_LABEL[m.role]) + "</span><span class='mbtns'>" + b + "</span></li>";
     }).join("") + (active.length ? "" : "<li class='muted small'>No members yet.</li>") + "</ul>";
+    // crew garage: everyone's cars
+    var names = {}; active.forEach(function (m) { names[m.user_id] = m.name; });
+    var cars = (r.cars || []).filter(function (x) { return names[x.owner]; });
+    if (cars.length) {
+      h += "<h5>Crew garage <b>" + cars.length + "</b></h5><div class='garage crew-garage'>" + cars.map(function (x) {
+        return "<div class='car-card'>" + (x.photo_url ? "<img src='" + esc(x.photo_url) + "' alt='' loading='lazy'>" : "<div class='car-ph'>🚗</div>") +
+          "<div class='car-meta'><b>" + esc(x.nickname || carName(x)) + "</b>" + (x.nickname ? "<small>" + esc(carName(x)) + "</small>" : "") +
+          "<a href='#' class='car-owner' data-profile='" + esc(x.owner) + "'>" + esc(names[x.owner]) + "</a></div></div>";
+      }).join("") + "</div>";
+    }
+    if (!canMembers) {
+      var up = r.meets.filter(function (m) { var d = parseDate(m.start); return m.status === "live" && d && d.getTime() > Date.now() - 12 * 36e5; });
+      if (up.length) h += "<h5>Upcoming meets</h5><ul class='member-list'>" + up.reverse().map(function (m) {
+        var d = parseDate(m.start);
+        return "<li><a href='#' class='mname' data-goto-meet='" + esc(m.id) + "'>" + esc(m.title) + "<small>" + esc(d ? fmtFull.format(d) : "") + "</small></a>" +
+          (m.visibility === "crew" ? "<span class='tag tag-type'>Crew only</span>" : "") + (GOING[m.id] ? "<span class='going-n small'>🚗 " + GOING[m.id] + "</span>" : "") + "</li>";
+      }).join("") + "</ul>";
+    }
     if (canMembers) {
       h += "<h5>Crew meets</h5>";
       h += r.meets.length ? "<ul class='member-list'>" + r.meets.map(function (m) {
@@ -1310,7 +1350,7 @@
           (m.visibility === "crew" ? "<span class='tag tag-type'>Crew only</span>" : "") + "<span class='mbtns'>" + b + "</span></li>";
       }).join("") + "</ul>" : "<p class='muted small'>No meets yet.</p>";
     }
-    if (!canMembers) h += "<p class='muted small'>Only the crew's owner and admins can manage it.</p>";
+
     $("#crew-panel-body").innerHTML = h;
   }
   document.addEventListener("click", function (e) {
@@ -1345,8 +1385,11 @@
       if (ROLE.admin && !$("#admin-panel").hidden) loadAdmin();
     }).catch(function (err) { el.disabled = false; el.classList.remove("confirm"); if (el.dataset.txt) el.textContent = el.dataset.txt; toast("Couldn't do that", err.message); });
   });
+  $("#crew-panel").addEventListener("click", function (e) {
+    if (e.target.closest("[data-goto-meet],[data-goto-crew],[data-profile]")) { $("#crew-panel").hidden = true; panelCrew = null; }
+  }, true);
+  $$("[data-crew-close]").forEach(function (b) { b.onclick = closeCrewPanel; });
   if (AUTH_ON) {
-    $$("[data-crew-close]").forEach(function (b) { b.onclick = closeCrewPanel; });
     $("#crew-panel").addEventListener("click", function (e) { if (e.target.id === "crew-panel") closeCrewPanel(); });
     BE.ready.then(loadMyCrews);   // after the saved sign-in is restored (not just when Google's script loads)
   }
@@ -1368,6 +1411,293 @@
     $("#vis-hint").textContent = sel.value === "crew"
       ? "Only members of " + hostName + " will see it." + (mine.length > 1 ? " Change the host crew above to pick another of your crews." : "")
       : (!mine.length ? "Join a crew to post meets only its members can see." : "");
+  }
+
+  /* ---------------- profiles, My Garage, "Pulling up", badges ---------------- */
+  var MYRSVP = {};      // meet id -> car id ("" = no car) for meets you're pulling up to
+  var MYCARS = null;    // your cars (loaded with your profile / when choosing a car)
+  var FOUNDING_BEFORE = new Date("2027-03-01T00:00:00+08:00");
+  var KIND_LABEL = { daily: "Daily", project: "Project", track: "Track", show: "Show car", other: "Other" };
+  function carName(c) { return [c.year, c.make, c.model].filter(Boolean).join(" "); }
+  function loadMyRsvps() {
+    if (!AUTH_ON || !authValid()) { MYRSVP = {}; return Promise.resolve(); }
+    return api({ action: "my_rsvps" }).then(function (r) { if (r && r.ok) { MYRSVP = r.items; renderMeets(); } }).catch(function () {});
+  }
+  function loadMyCars() {
+    if (MYCARS || !authValid()) return Promise.resolve(MYCARS || []);
+    return BE.profile({}).then(function (r) { MYCARS = r && r.ok ? r.cars : []; return MYCARS; });
+  }
+  function meetOver(e) { return e.endD && e.endD.getTime() < Date.now(); }
+  function rsvpBlock(e) {
+    if (e._src !== "sheet" || !BE) return "";
+    var n = GOING[e.id] || 0, mine = MYRSVP[e.id] !== undefined, over = meetOver(e), id = esc(e.id);
+    var h = "<div class='rsvp' data-rsvp-box='" + id + "'><div class='rsvp-top'>" +
+      "<span class='rsvp-n'>🚗 <b>" + n + "</b> " + (over ? "pulled up" : "pulling up") + "</span>" +
+      (n ? "<a href='#' data-going='" + id + "'>See who</a>" : "") + "</div>";
+    if (!over) h += mine
+      ? "<button class='btn sm btn-accent rsvp-btn' data-unrsvp='" + id + "'>✓ You're pulling up</button>"
+      : "<button class='btn sm rsvp-btn' data-rsvp='" + id + "'>I'm pulling up</button>";
+    return h + "<div class='rsvp-extra'></div></div>";
+  }
+  function refreshRsvpBox(id) {
+    var e = eventById[id], box = document.querySelector("[data-rsvp-box='" + id + "']");
+    if (e && box) box.outerHTML = rsvpBlock(e);
+    renderMeets();
+  }
+  function sendRsvp(id, carId) {
+    return api({ action: "rsvp", meet_id: id, car_id: carId || null }).then(function (r) {
+      if (!r.ok) throw new Error(r.error);
+      if (MYRSVP[id] === undefined) GOING[id] = (GOING[id] || 0) + 1;
+      MYRSVP[id] = carId || "";
+      refreshRsvpBox(id);
+      toast("See you there 🚗", "Tap 🔔 Remind me so you don't miss it.", 3500);
+    });
+  }
+  document.addEventListener("click", function (ev) {
+    var t = ev.target.closest("[data-rsvp],[data-unrsvp],[data-rsvp-car],[data-going],[data-profile]");
+    if (!t) return;
+    ev.preventDefault(); ev.stopPropagation();
+    if (t.dataset.profile) { openProfile(t.dataset.profile); return; }
+    if (t.dataset.going) {
+      var box = t.closest("[data-rsvp-box]").querySelector(".rsvp-extra");
+      if (box.dataset.open === "going") { box.innerHTML = ""; box.dataset.open = ""; return; }
+      box.dataset.open = "going"; box.innerHTML = "<span class='muted small'>Loading…</span>";
+      BE.going({ meet_id: t.dataset.going }).then(function (r) {
+        if (!r.ok) throw new Error(r.error);
+        box.innerHTML = r.items.length ? "<ul class='going-list'>" + r.items.map(function (g) {
+          return "<li><a href='#' data-profile='" + esc(g.user_id) + "'><span class='mav sm'>" +
+            (g.avatar ? "<img src='" + esc(g.avatar) + "' alt='' referrerpolicy='no-referrer'>" : "<b>" + esc(initials(g.name)) + "</b>") +
+            "</span>" + esc(g.name) + "</a>" + (g.car ? "<small>" + esc(g.car) + "</small>" : "") + "</li>";
+        }).join("") + "</ul>" : "<span class='muted small'>No one yet.</span>";
+      }).catch(function (e) { box.innerHTML = "<span class='muted small'>" + esc(e.message || "Couldn't load") + "</span>"; });
+      return;
+    }
+    if (!authValid()) { toast("Sign in first", "Tap the account button at the top right."); return; }
+    var id = t.dataset.rsvp || t.dataset.unrsvp || t.dataset.rsvpCar;
+    if (t.dataset.unrsvp) {
+      if (!t.classList.contains("confirm")) {
+        t.classList.add("confirm"); t.textContent = "Tap again to cancel";
+        setTimeout(function () { if (t.isConnected) { t.classList.remove("confirm"); t.textContent = "✓ You're pulling up"; } }, 4000);
+        return;
+      }
+      t.disabled = true;
+      api({ action: "unrsvp", meet_id: id }).then(function (r) {
+        if (!r.ok) throw new Error(r.error);
+        delete MYRSVP[id]; GOING[id] = Math.max(0, (GOING[id] || 1) - 1); refreshRsvpBox(id);
+      }).catch(function (e) { t.disabled = false; toast("Couldn't cancel", e.message); });
+      return;
+    }
+    if (t.dataset.rsvpCar !== undefined) {   // picked a car
+      t.closest(".rsvp-extra").querySelectorAll("button").forEach(function (b) { b.disabled = true; });
+      sendRsvp(id, t.dataset.car).catch(function (e) { toast("Couldn't save", e.message); refreshRsvpBox(id); });
+      return;
+    }
+    // "I'm pulling up": ask which car if you have more than one
+    t.disabled = true;
+    loadMyCars().then(function (cars) {
+      if (cars.length <= 1) return sendRsvp(id, cars[0] ? cars[0].id : "");
+      var box = t.closest("[data-rsvp-box]").querySelector(".rsvp-extra");
+      box.dataset.open = "cars";
+      box.innerHTML = "<span class='muted small'>Bringing which car?</span><div class='rsvp-cars'>" + cars.map(function (c) {
+        return "<button class='btn sm' data-rsvp-car='" + esc(id) + "' data-car='" + esc(c.id) + "'>" + esc(c.nickname || carName(c)) + "</button>";
+      }).join("") + "<button class='btn sm' data-rsvp-car='" + esc(id) + "' data-car=''>Not sure yet</button></div>";
+    }).catch(function (e) { t.disabled = false; toast("Couldn't save", e.message); });
+  });
+
+  // ---- profile panel ----
+  var profileId = null;
+  function openProfile(id) {
+    profileId = id || (auth && auth.id);
+    if (!profileId) return;
+    $("#acct-menu").hidden = true; map.closePopup();
+    ["#crew-panel", "#admin-panel"].forEach(function (s) { if (!$(s).hidden) $(s).hidden = true; });
+    $("#profile-panel").hidden = false;
+    $("#profile-body").innerHTML = "<p class='muted'>Loading…</p>";
+    BE.profile({ user_id: profileId }).then(function (r) {
+      if (!r.ok) throw new Error(r.error);
+      if (r.me) MYCARS = r.cars;
+      renderProfile(r);
+    }).catch(function (e) { $("#profile-body").innerHTML = "<p class='muted'>Couldn't load: " + esc(e.message || "") + "</p>"; });
+  }
+  function badgesFor(r) {
+    var b = [], st = r.stats;
+    if (r.profile.admin) b.push(["⭐", "Street Archive admin"]);
+    if (new Date(r.profile.joined) < FOUNDING_BEFORE) b.push(["🏁", "Founding member"]);
+    if (r.crews.some(function (c) { return c.role === "owner"; })) b.push(["👑", "Crew owner"]);
+    else if (r.crews.some(function (c) { return c.role === "admin"; })) b.push(["🛡️", "Crew admin"]);
+    if (r.crews.some(function (c) { return c.verified; })) b.push(["✔", "Verified crew"]);
+    if (st.posted >= 5) b.push(["🎤", "Organizer · 5+ meets"]); else if (st.posted >= 1) b.push(["📣", "Meet host"]);
+    if (st.attended >= 10) b.push(["🏆", "Veteran · 10+ meets"]); else if (st.attended >= 5) b.push(["🔥", "Regular · 5+ meets"]); else if (st.attended >= 1) b.push(["🚗", "First meet"]);
+    if (st.cars >= 3) b.push(["🔧", "Collector · 3+ cars"]); else if (st.cars >= 1) b.push(["🔧", "Garage"]);
+    return b;
+  }
+  function renderProfile(r) {
+    var p = r.profile, h = "";
+    var joined = new Date(p.joined), link = safeUrl(p.link);
+    h += "<div class='prof-head'><span class='mav lg'>" + (p.avatar ? "<img src='" + esc(p.avatar) + "' alt='' referrerpolicy='no-referrer'>" : "<b>" + esc(initials(p.name || "?")) + "</b>") + "</span>" +
+      "<div><h2>" + esc(p.name || "Member") + "</h2><div class='muted small'>Member since " + esc(fmtMon.format(joined)) + " " + joined.getFullYear() +
+      " · " + r.stats.attended + " meet" + (r.stats.attended === 1 ? "" : "s") + " attended</div>" +
+      (link ? "<a class='prof-link' href='" + esc(link) + "' target='_blank' rel='noopener'>" + esc(link.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")) + " ↗</a>" : "") + "</div></div>";
+    var badges = badgesFor(r);
+    if (badges.length) h += "<div class='badges'>" + badges.map(function (x) { return "<span class='badge-chip' title='" + esc(x[1]) + "'>" + x[0] + " " + esc(x[1]) + "</span>"; }).join("") + "</div>";
+    if (p.bio) h += "<p class='prof-bio'>" + esc(p.bio).replace(/\n/g, "<br>") + "</p>";
+    if (r.me) h += "<div class='crew-actions'><button class='btn sm' data-prof-edit>Edit profile</button><button class='btn sm btn-accent' data-car-new>+ Add a car</button></div>";
+    // crews
+    h += "<h5>Crews <b>" + r.crews.length + "</b></h5>";
+    h += r.crews.length ? "<div class='prof-crews'>" + r.crews.map(function (c) {
+      return "<a href='#' class='prof-crew' data-goto-crew='" + esc(c.id) + "' style='--c:" + esc(c.color || "#ffd400") + "'>" +
+        (c.logo ? "<img src='" + esc(goodLogo(c.logo) || "") + "' alt=''>" : "") + "<span>" + esc(c.name) + (c.verified ? " <span class='verified'>✔</span>" : "") +
+        "<small>" + esc(ROLE_LABEL[c.role] || "Member") + "</small></span></a>";
+    }).join("") + "</div>" : "<p class='muted small'>" + (r.me ? "Not in a crew yet — open a crew on the map and tap Request to join." : "Not in a crew yet.") + "</p>";
+    // garage
+    h += "<h5>Garage <b>" + r.cars.length + "</b></h5>";
+    h += r.cars.length ? "<div class='garage'>" + r.cars.map(function (c) {
+      return "<div class='car-card'>" + (c.photo_url ? "<img src='" + esc(c.photo_url) + "' alt='' loading='lazy'>" : "<div class='car-ph'>🚗</div>") +
+        "<div class='car-meta'><b>" + esc(c.nickname || carName(c)) + "</b>" + (c.nickname ? "<small>" + esc(carName(c)) + "</small>" : "") +
+        "<span class='tag tag-type'>" + esc(KIND_LABEL[c.kind] || c.kind) + "</span>" +
+        (c.mods ? "<p>" + esc(c.mods).replace(/\n/g, "<br>") + "</p>" : "") +
+        (r.me ? "<div class='mbtns'><button class='btn sm' data-car-edit='" + esc(c.id) + "'>Edit</button><button class='btn sm btn-danger' data-car-del='" + esc(c.id) + "'>Remove</button></div>" : "") +
+        "</div></div>";
+    }).join("") + "</div>" : "<p class='muted small'>" + (r.me ? "Show off your build — tap + Add a car." : "No cars added yet.") + "</p>";
+    // meets
+    if (r.me && r.going.length) {
+      h += "<h5>Pulling up to</h5><ul class='member-list'>" + r.going.map(function (m) {
+        var d = parseDate(m.start);
+        return "<li><a href='#' class='mname' data-goto-meet='" + esc(m.id) + "'>" + esc(m.title) + "<small>" + esc(d ? fmtFull.format(d) : "") + "</small></a></li>";
+      }).join("") + "</ul>";
+    }
+    if (r.meets.length) {
+      h += "<h5>Upcoming meets they're hosting</h5><ul class='member-list'>" + r.meets.map(function (m) {
+        var d = parseDate(m.start);
+        return "<li><a href='#' class='mname' data-goto-meet='" + esc(m.id) + "'>" + esc(m.title) + "<small>" + esc(d ? fmtFull.format(d) : "") + "</small></a>" +
+          (m.visibility === "crew" ? "<span class='tag tag-type'>Crew only</span>" : "") + "</li>";
+      }).join("") + "</ul>";
+    }
+    $("#profile-title").textContent = r.me ? "My profile" : "Profile";
+    $("#profile-body").innerHTML = h;
+    $("#profile-body").dataset.json = JSON.stringify({ name: p.name, bio: p.bio, link: p.link });
+  }
+  function closeProfile() { $("#profile-panel").hidden = true; profileId = null; }
+  // jump to a meet / crew from a profile
+  $("#profile-panel").addEventListener("click", function (e) {
+    if (e.target.id === "profile-panel") { closeProfile(); return; }
+    if (e.target.closest("[data-goto-meet],[data-goto-crew]")) closeProfile();
+  }, true);
+
+  // edit profile (inline form)
+  document.addEventListener("click", function (e) {
+    var ed = e.target.closest("[data-prof-edit]"), sv = e.target.closest("[data-prof-save]"), cn = e.target.closest("[data-prof-cancel]");
+    if (!ed && !sv && !cn) return;
+    e.preventDefault();
+    if (cn) { openProfile(profileId); return; }
+    if (ed) {
+      var cur = JSON.parse($("#profile-body").dataset.json || "{}");
+      $("#profile-body").innerHTML = "<form id='prof-form' class='prof-form'>" +
+        "<label>Name<input name='name' maxlength='40' value='" + esc(cur.name || "") + "'></label>" +
+        "<label>Bio <span class='muted'>(optional)</span><textarea name='bio' rows='3' maxlength='300' placeholder='Your build, your crew, what you drive…'>" + esc(cur.bio || "") + "</textarea></label>" +
+        "<label>Instagram / FB / TikTok <span class='muted'>(optional)</span><input name='link' maxlength='200' placeholder='@yourhandle or https://…' value='" + esc(cur.link || "") + "'></label>" +
+        "<p class='muted small'>Your email is never shown. Your photo comes from your Google account.</p>" +
+        "<div class='modal-actions'><button type='button' class='btn' data-prof-cancel>Cancel</button><button type='button' class='btn btn-accent' data-prof-save>Save</button></div></form>";
+      return;
+    }
+    var f = $("#prof-form"); sv.disabled = true;
+    api({ action: "save_profile", name: f.elements.name.value, bio: f.elements.bio.value, link: f.elements.link.value }).then(function (r) {
+      if (!r.ok) throw new Error(r.error);
+      toast("Profile saved ✅");
+      if (auth) { auth.name = f.elements.name.value.trim(); renderAccount(); }
+      openProfile(profileId);
+    }).catch(function (err) { sv.disabled = false; toast("Couldn't save", err.message); });
+  });
+
+  // ---- car form (add / edit) ----
+  var carEditing = null, carBlob = null;
+  function openCarForm(car) {
+    carEditing = car || null; carBlob = null;
+    var f = $("#car-form"); f.reset();
+    $("#car-title").textContent = car ? "Edit car" : "Add a car";
+    if (car) ["year", "make", "model", "nickname", "kind", "mods"].forEach(function (k) { f.elements[k].value = car[k] == null ? "" : car[k]; });
+    var prev = $("#car-preview");
+    prev.innerHTML = car && car.photo_url ? "<img src='" + esc(car.photo_url) + "' alt=''>" : "";
+    $("#car-photo-note").textContent = car && car.photo_url ? "Pick a new photo to replace it." : "One photo — it's shrunk on your phone before uploading.";
+    $("#car-panel").hidden = false;
+  }
+  function closeCarForm() { $("#car-panel").hidden = true; carEditing = null; carBlob = null; }
+  // shrink a photo on the device: max 1280 px, JPEG, under ~450 KB
+  function shrinkImage(file) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image(), u = URL.createObjectURL(file);
+      img.onload = function () {
+        URL.revokeObjectURL(u);
+        var max = 1280, w = img.naturalWidth, h = img.naturalHeight;
+        function attempt(maxSide, q) {
+          var k = Math.min(1, maxSide / Math.max(w, h)), c = document.createElement("canvas");
+          c.width = Math.round(w * k); c.height = Math.round(h * k);
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          c.toBlob(function (b) {
+            if (!b) return reject(new Error("Couldn't read that photo."));
+            if (b.size > 450 * 1024 && (q > 0.5 || maxSide > 800)) return attempt(q > 0.5 ? maxSide : Math.round(maxSide * 0.8), q > 0.5 ? q - 0.1 : q);
+            resolve(b);
+          }, "image/jpeg", q);
+        }
+        attempt(max, 0.82);
+      };
+      img.onerror = function () { URL.revokeObjectURL(u); reject(new Error("That file doesn't look like a photo (try a JPG or PNG).")); };
+      img.src = u;
+    });
+  }
+  $("#car-photo").addEventListener("change", function () {
+    var file = this.files && this.files[0]; if (!file) return;
+    $("#car-photo-note").textContent = "Preparing photo…";
+    shrinkImage(file).then(function (b) {
+      carBlob = b;
+      $("#car-preview").innerHTML = "<img src='" + URL.createObjectURL(b) + "' alt=''>";
+      $("#car-photo-note").textContent = "Ready · " + Math.round(b.size / 1024) + " KB";
+    }).catch(function (e) { carBlob = null; $("#car-photo-note").textContent = e.message; });
+  });
+  $("#car-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = this, btn = $("#car-save");
+    if (!f.elements.make.value.trim()) { toast("Add the make", "e.g. Honda, Toyota, Mitsubishi"); return; }
+    btn.disabled = true; btn.textContent = carBlob ? "Uploading photo…" : "Saving…";
+    var up = carBlob ? api({ action: "upload_car_photo", blob: carBlob }) : Promise.resolve({ ok: true, url: carEditing ? carEditing.photo_url : "" });
+    up.then(function (r) {
+      if (!r.ok) throw new Error(r.error || "Photo upload failed");
+      btn.textContent = "Saving…";
+      return api({ action: "save_car", id: carEditing && carEditing.id, year: f.elements.year.value, make: f.elements.make.value, model: f.elements.model.value,
+                   nickname: f.elements.nickname.value, kind: f.elements.kind.value, mods: f.elements.mods.value,
+                   photo_url: r.url || "", old_photo: carEditing ? carEditing.photo_url : "" });
+    }).then(function (r) {
+      if (!r.ok) throw new Error(r.error);
+      toast(carEditing ? "Car updated ✅" : "Added to your garage 🚗");
+      closeCarForm(); MYCARS = null; openProfile(auth && auth.id);
+    }).catch(function (err) { toast("Couldn't save", err.message); })
+      .then(function () { btn.disabled = false; btn.textContent = "Save"; });
+  });
+  document.addEventListener("click", function (e) {
+    var nw = e.target.closest("[data-car-new]"), ed = e.target.closest("[data-car-edit]"), dl = e.target.closest("[data-car-del]"), cl = e.target.closest("[data-car-close]");
+    if (!nw && !ed && !dl && !cl) return;
+    e.preventDefault();
+    if (cl) { closeCarForm(); return; }
+    if (nw) { openCarForm(null); return; }
+    var id = (ed || dl).dataset.carEdit || (ed || dl).dataset.carDel;
+    var car = (MYCARS || []).filter(function (c) { return c.id === id; })[0];
+    if (ed) { if (car) openCarForm(car); return; }
+    if (!dl.classList.contains("confirm")) {
+      dl.classList.add("confirm"); dl.textContent = "Tap again";
+      setTimeout(function () { if (dl.isConnected) { dl.classList.remove("confirm"); dl.textContent = "Remove"; } }, 4000);
+      return;
+    }
+    dl.disabled = true;
+    api({ action: "delete_car", id: id }).then(function (r) {
+      if (!r.ok) throw new Error(r.error);
+      toast("Removed from your garage"); MYCARS = null; openProfile(auth && auth.id);
+    }).catch(function (err) { dl.disabled = false; toast("Couldn't remove", err.message); });
+  });
+  if (AUTH_ON) {
+    $$("[data-profile-close]").forEach(function (b) { b.onclick = closeProfile; });
+    $("#car-panel").addEventListener("click", function (e) { if (e.target.id === "car-panel") closeCarForm(); });
+    $("#acct-profile").onclick = function () { openProfile(auth && auth.id); };
+    BE.ready.then(loadMyRsvps);
   }
 
   /* ---------------- submit modal ---------------- */
