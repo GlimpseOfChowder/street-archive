@@ -921,7 +921,7 @@
       var g = gis(); if (g) g.disableAutoSelect();
       renderAccount(); updateGate(); $("#acct-menu").hidden = true;
       ROLE = { admin: false, trusted: false }; $("#acct-admin").hidden = true; document.body.classList.remove("is-admin");
-      MY = {}; adminWaiting = 0; renderMyCrews(); MYRSVP = {}; MYCARS = null; renderMeets();
+      MY = {}; adminWaiting = 0; renderMyCrews(); MYRSVP = {}; MYCARS = null; renderMeets(); renderHostOptions("");
       // forget crew-only meets on this device
       var c = cacheGet(); if (c && c.events) { c.events = c.events.filter(function (x) { return x.visibility !== "crew"; }); cacheSet(c); }
       toast("Signed out");
@@ -1016,6 +1016,7 @@
       ROLE = { admin: !!r.admin, trusted: !!r.trusted };
       $("#acct-admin").hidden = !ROLE.admin;
       loadAdminCounts();
+      if (!editing) renderHostOptions();
       if (ROLE.admin) document.body.classList.add("is-admin");
     }).catch(function () {});
   }
@@ -1222,7 +1223,7 @@
     return api({ action: "my_crews" }).then(function (r) {
       if (!r.ok) return;
       MY = {}; (r.items || []).forEach(function (x) { MY[x.crew_id] = x; });
-      renderMyCrews(); updateVisibilityField();
+      renderMyCrews(); if (!editing) renderHostOptions(); updateVisibilityField();
     }).catch(function () {});
   }
   var ROLE_LABEL = { owner: "Owner", admin: "Crew admin", member: "Member" };
@@ -1801,8 +1802,21 @@
 
   /* ---------------- submit modal ---------------- */
   var modal = $("#modal"), form = $("#submit-form"), kind = "meet", picked = null, pickMarker = null;
-  $("#host-select").innerHTML = "<option value=''>— Open / independent —</option>" +
-    CREWS.map(function (c) { return "<option value='" + esc(c.id) + "'>" + esc(c.name) + "</option>"; }).join("");
+  // Host crew list: only crews you're a member of (the site admin sees every crew).
+  // `keep` = a host to keep in the list anyway (e.g. editing an older meet).
+  function renderHostOptions(keep) {
+    var sel = $("#host-select"); if (!sel) return;
+    var cur = keep !== undefined ? keep : sel.value;
+    var list = CREWS.filter(function (c) { return c._src !== "sheet" || ROLE.admin || memberOf(c.id) || c.id === cur; });
+    sel.innerHTML = "<option value=''>— Open / independent —</option>" +
+      list.map(function (c) { return "<option value='" + esc(c.id) + "'>" + esc(c.name) + "</option>"; }).join("") +
+      (!ROLE.admin && !myMemberCrews().length ? "<option value='' disabled>Join a crew to host meets for it</option>" : "");
+    if (cur && !sel.querySelector("option[value='" + String(cur).replace(/'/g, "") + "']")) {
+      var o = document.createElement("option"); o.value = cur; o.textContent = (crewById[cur] || {}).name || cur; sel.appendChild(o);
+    }
+    sel.value = cur || "";
+  }
+  renderHostOptions("");
 
   form.elements.host.addEventListener("change", function () { updateVisibilityField("host"); });
   form.elements.visibility.addEventListener("change", function () { updateVisibilityField("visibility"); });
@@ -1857,10 +1871,7 @@
     setFormMode(true, m.kind);
     var set = function (n, v) { var el = form.elements[n]; if (el) el.value = v == null ? "" : v; };
     if (m.kind === "meet") {
-      var hostSel = $("#host-select");
-      if (m.host && !hostSel.querySelector("option[value='" + m.host.replace(/'/g, "") + "']")) {
-        var o = document.createElement("option"); o.value = m.host; o.textContent = m.host; hostSel.appendChild(o);
-      }
+      renderHostOptions(m.host || "");
       set("title", m.title); set("type", m.type || "meet"); set("host", m.host || "");
       set("start_date", (m.start || "").slice(0, 10)); set("start_time", (m.start || "").slice(11, 16));
       set("end_date", (m.end || "").slice(0, 10)); set("end_time", (m.end || "").slice(11, 16));
