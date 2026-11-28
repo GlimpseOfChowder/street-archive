@@ -3,7 +3,7 @@
      saved copy when offline or the signal is bad.
    - Versioned libraries (Leaflet, Supabase from unpkg): saved once, reused.
    - Database, sign-in, map tiles and everything else: not touched. */
-var VERSION = "sa-20261128u";
+var VERSION = "sa-20261128v";
 var CORE = ["./", "index.html", "styles.css", "script.js", "js/config.js", "js/backend.js",
             "data/crews.js", "data/events.js", "club_logos/site_logo.png", "icons/icon-192.png", "manifest.webmanifest"];
 

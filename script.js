@@ -499,23 +499,44 @@
     var ics = lines.join("\r\n");
     var ua = navigator.userAgent || "";
     var isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    if (isIOS) {
-      // iOS can't "download" a calendar file from a page. Opening a real .ics URL
-      // (served by our Supabase "ics" function) brings up the native "Add to Calendar" sheet.
-      if (BE && e._src === "sheet" && e.visibility !== "crew") window.location.href = BE.icsUrl(e.id);
-      else window.location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
-    } else {
+    var isAndroid = /Android/i.test(ua);
+    var g = "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(e.title) +
+      "&dates=" + icsDate(e.startD) + "/" + icsDate(e.endD) + "&location=" + encodeURIComponent((e.place || "") + " (" + e.coords.join(",") + ")") +
+      "&details=" + encodeURIComponent(desc.replace(/\\n/g, "\n"));
+    function saveIcsFile() {
       var blob = new Blob([ics], { type: "text/calendar" });
       var a = document.createElement("a");
       a.href = URL.createObjectURL(blob); a.download = e.id + ".ics";
       document.body.appendChild(a); a.click(); a.remove();
     }
-    var g = "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(e.title) +
-      "&dates=" + icsDate(e.startD) + "/" + icsDate(e.endD) + "&location=" + encodeURIComponent((e.place || "") + " (" + e.coords.join(",") + ")") +
-      "&details=" + encodeURIComponent(desc.replace(/\\n/g, "\n"));
+    var head, alt;
+    if (isIOS) {
+      // iOS can't "download" a calendar file from a page. Opening a real .ics URL
+      // (served by our Supabase "ics" function) brings up the native "Add to Calendar" sheet.
+      if (BE && e._src === "sheet" && e.visibility !== "crew") window.location.href = BE.icsUrl(e.id);
+      else window.location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
+      head = "Opening your Calendar…";
+      alt = "Using Google Calendar? <a target='_blank' rel='noopener' style='color:var(--acc)' href='" + esc(g) + "'>Add it there instead</a>";
+    } else if (isAndroid) {
+      // Opens the phone's calendar app (Google Calendar) on its "new event" screen, already filled in.
+      // If no calendar app answers, Chrome falls back to Google Calendar on the web.
+      var x = function (v) { return encodeURIComponent(v || ""); };
+      window.location.href = "intent:#Intent;action=android.intent.action.INSERT;type=vnd.android.cursor.dir/event" +
+        ";S.title=" + x(e.title) + ";S.eventLocation=" + x(e.place) + ";S.description=" + x(desc.replace(/\\n/g, "\n")) +
+        ";l.beginTime=" + e.startD.getTime() + ";l.endTime=" + e.endD.getTime() +
+        ";S.browser_fallback_url=" + x(g) + ";end";
+      head = "Opening your Calendar…";
+      alt = "Didn't open? <a target='_blank' rel='noopener' style='color:var(--acc)' href='" + esc(g) + "'>Use Google Calendar</a> or <a href='#' data-ics-file style='color:var(--acc)'>download the file</a>";
+    } else {
+      window.open(g, "_blank", "noopener");
+      head = "Opened Google Calendar";
+      alt = "Use Outlook or Apple Calendar? <a href='#' data-ics-file style='color:var(--acc)'>Download the file</a>";
+    }
     var el = document.createElement("div");
     el.className = "toast";
-    el.innerHTML = "<b>" + (isIOS ? "Opening your Calendar…" : "Calendar file downloaded") + "</b><span class='muted'>Using Google Calendar? <a target='_blank' rel='noopener' style='color:var(--acc)' href='" + esc(g) + "'>Add it there instead</a></span>";
+    el.innerHTML = "<b>" + head + "</b><span class='muted'>" + alt + "</span>";
+    var f = el.querySelector("[data-ics-file]");
+    if (f) f.addEventListener("click", function (ev) { ev.preventDefault(); saveIcsFile(); });
     $("#toasts").appendChild(el); setTimeout(function () { el.remove(); }, 8000);
   }
 
