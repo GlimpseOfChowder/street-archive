@@ -260,6 +260,25 @@
       return { ok: true, url: sb.storage.from("avatars").getPublicUrl(path).data.publicUrl };
     });
   }
+  // Crew logos live in the uploader's own folder of the "avatars" bucket.
+  function uploadLogo(d) {
+    var path = uid() + "/crew-" + Date.now().toString(36) + ".jpg";
+    return sb.storage.from("avatars").upload(path, d.blob, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false }).then(function (r) {
+      if (r.error) throw r.error;
+      return { ok: true, url: sb.storage.from("avatars").getPublicUrl(path).data.publicUrl };
+    });
+  }
+  // Phone notifications: remember / forget this device for the signed-in person.
+  function pushSave(d) {
+    return sb.rpc("save_push_sub", { p_endpoint: d.endpoint, p_p256dh: d.p256dh, p_auth: d.auth }).then(function (r) {
+      if (r.error) throw r.error; return { ok: true };
+    });
+  }
+  function pushRemove(d) {
+    return sb.rpc("remove_push_sub", { p_endpoint: d.endpoint }).then(function (r) {
+      if (r.error) throw r.error; return { ok: true };
+    });
+  }
   // Your name + photo as saved in your profile (may differ from Google's).
   function myBasics() {
     return sb.from("profiles").select("display_name,avatar_url").eq("id", uid()).maybeSingle().then(function (r) {
@@ -537,6 +556,9 @@
       if (d.action === "profile") return profile(d);
       if (d.action === "save_profile") return saveProfile(d);
       if (d.action === "upload_avatar") return uploadAvatar(d);
+      if (d.action === "upload_logo") return uploadLogo(d);
+      if (d.action === "push_save") return pushSave(d);
+      if (d.action === "push_remove") return pushRemove(d);
       if (d.action === "my_basics") return myBasics();
       if (d.action === "upload_car_photo") return uploadCarPhoto(d);
       if (d.action === "save_car") return saveCar(d);

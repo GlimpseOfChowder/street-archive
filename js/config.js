@@ -13,6 +13,9 @@ window.SA_CONFIG = {
   supabaseUrl: "https://mdhhxcdmzduwcfgbamcr.supabase.co",
   supabaseKey: "sb_publishable__ePovCY0RWe897sAV8WtzQ_VGNO2XUH",
 
+  // Phone notifications: the PUBLIC half of your VAPID key pair (the private half is a Supabase secret).
+  vapidPublicKey: "BIfNZ7H7yld1YQZIXmCG1ivomNMzkYFw6nXf--ng2gGnpVn7i-72q3LIpYBePbm2q-DC5tqb_h2dL9l4zZPs37g",
+
   // Google sign-in for posting (needs the Supabase settings above). OAuth "Web" client ID from
   // Google Cloud Console, e.g. 1234-abc.apps.googleusercontent.com. Must match
   // Supabase → Authentication → Providers → Google → Client IDs.
