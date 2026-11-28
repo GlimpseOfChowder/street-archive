@@ -518,15 +518,11 @@
       head = "Opening your Calendar…";
       alt = "Using Google Calendar? <a target='_blank' rel='noopener' style='color:var(--acc)' href='" + esc(g) + "'>Add it there instead</a>";
     } else if (isAndroid) {
-      // Opens the phone's calendar app (Google Calendar) on its "new event" screen, already filled in.
-      // If no calendar app answers, Chrome falls back to Google Calendar on the web.
-      var x = function (v) { return encodeURIComponent(v || ""); };
-      window.location.href = "intent:#Intent;action=android.intent.action.INSERT;type=vnd.android.cursor.dir/event" +
-        ";S.title=" + x(e.title) + ";S.eventLocation=" + x(e.place) + ";S.description=" + x(desc.replace(/\\n/g, "\n")) +
-        ";l.beginTime=" + e.startD.getTime() + ";l.endTime=" + e.endD.getTime() +
-        ";S.browser_fallback_url=" + x(g) + ";end";
-      head = "Opening your Calendar…";
-      alt = "Didn't open? <a target='_blank' rel='noopener' style='color:var(--acc)' href='" + esc(g) + "'>Use Google Calendar</a> or <a href='#' data-ics-file style='color:var(--acc)'>download the file</a>";
+      // Chrome won't let a web app open the Calendar app directly, so we open Google Calendar's
+      // "new event" page already filled in. Saving there syncs to the Calendar app on the phone.
+      window.open(g, "_blank", "noopener");
+      head = "Tap Save in Google Calendar";
+      alt = "It syncs to your Calendar app. Other calendar app? <a href='#' data-ics-file style='color:var(--acc)'>Download the file</a>";
     } else {
       window.open(g, "_blank", "noopener");
       head = "Opened Google Calendar";
