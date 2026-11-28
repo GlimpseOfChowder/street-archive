@@ -944,14 +944,14 @@
     if (!resp || !resp.credential) { toast("Sign-in failed", "Please try again."); return; }
     BE.signInWithGoogle(resp.credential).then(function (u) {
       auth = u;
-      renderAccount(); updateGate(); loadRole(); loadMyCrews(); MYCARS = null; loadMyRsvps(); loadMyBasics();
+      renderAccount(); updateGate(); loadRole(); loadMyCrews(); MYCARS = null; loadMyRsvps(); loadMyBasics(); checkPush();
       toast("Signed in", "Welcome, " + ((auth && auth.name) || "").split(" ")[0] + "!");
       // crew-only meets you belong to appear after a refresh of the data
       BE.load().then(function (d) { cacheSet(d); }).catch(function () {});
     }).catch(function (e) { toast("Sign-in failed", (e && e.message) || "Please try again."); });
   }
   function signOut() {
-    BE.signOut().then(function () {
+    forgetPushDevice().then(function () { return BE.signOut(); }).then(function () {
       auth = null;
       var g = gis(); if (g) g.disableAutoSelect();
       renderAccount(); updateGate(); $("#acct-menu").hidden = true;
@@ -1029,7 +1029,7 @@
     BE.onAuthChange(function () {
       var was = auth && auth.id;
       auth = BE.user(); applyBasics(); renderAccount(); updateGate();
-      if ((auth && auth.id) !== was) { MYBASICS = null; loadRole(); loadMyCrews(); MYCARS = null; loadMyRsvps(); loadMyBasics(); }   // signed in / out / switched account
+      if ((auth && auth.id) !== was) { MYBASICS = null; loadRole(); loadMyCrews(); MYCARS = null; loadMyRsvps(); loadMyBasics(); checkPush(); }   // signed in / out / switched account
     });
     $("#acct-btn").onclick = function (e) {
       e.stopPropagation();
@@ -1053,6 +1053,7 @@
       loadAdminCounts();
       if (!editing) renderHostOptions();
       if (ROLE.admin) document.body.classList.add("is-admin");
+      refreshPushButton(); maybeAskPush();
     }).catch(function () {});
   }
   // "⚑ Report" at the bottom of a popup (not for your own posts / data-file entries)
@@ -1276,6 +1277,7 @@
           (runsCrew(id) && m.requests ? " · " + m.requests : "") + "</button>" : "") + "</div></li>";
     }).join("");
     crewBadge = badge; updateBadge();
+    refreshPushButton(); maybeAskPush();
   }
   // Buttons under a crew in its map popup.
   function crewButtons(c) {
@@ -1813,6 +1815,7 @@
     $("#acct-profile").onclick = function () { openProfile(auth && auth.id); };
     BE.ready.then(loadMyRsvps);
     BE.ready.then(loadMyBasics);
+    BE.ready.then(checkPush);
   }
 
   /* ---------------- profile photo: crop to a square on the phone, upload ---------------- */
@@ -1832,6 +1835,109 @@
       img.src = u;
     });
   }
+  /* ---------------- crew logo upload ---------------- */
+  var logoChoice = null;   // { blob } = a new logo picked but not uploaded yet (uploads when the form is saved)
+  function renderLogoPreview() {
+    var el = $("#logo-preview"); if (!el || !form) return;
+    var v = (form.elements.logo.value || "").trim();
+    var src = logoChoice && logoChoice.blob ? URL.createObjectURL(logoChoice.blob) : (v ? (/^https?:/i.test(v) ? v : "club_logos/" + v) : "");
+    el.innerHTML = src ? "<img src='" + esc(src) + "' alt=''>" : "<b>" + esc(initials(form.elements.name.value || "?")) + "</b>";
+    $("#logo-clear").hidden = !src;
+  }
+  document.addEventListener("change", function (e) {
+    if (e.target.id !== "logo-file") return;
+    var file = e.target.files && e.target.files[0]; if (!file) return;
+    $("#logo-note").textContent = "Preparing logo…";
+    squareImage(file, 400).then(function (b) {
+      logoChoice = { blob: b }; renderLogoPreview(); e.target.value = "";
+      $("#logo-note").textContent = "New logo ready · " + Math.round(b.size / 1024) + " KB — it uploads when you save";
+    }).catch(function (err) { e.target.value = ""; $("#logo-note").textContent = err.message; });
+  });
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest("#logo-clear")) return;
+    logoChoice = null; form.elements.logo.value = ""; renderLogoPreview();
+    $("#logo-note").textContent = "No logo — your crew's initials show instead.";
+  });
+  document.addEventListener("input", function (e) { if (e.target.name === "name" && e.target.form === form) renderLogoPreview(); });
+  document.addEventListener("reset", function (e) { if (e.target === form) { logoChoice = null; setTimeout(renderLogoPreview, 0); } }, true);
+
+  /* ---------------- phone notifications (web push) ---------------- */
+  var PUSH_KEY = (CFG.vapidPublicKey || "").trim();
+  var IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var IS_STANDALONE = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  var pushOn = false, pushChecked = false;
+  function pushSupported() { return !!PUSH_KEY && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
+  function runsAnything() { return !!ROLE.admin || Object.keys(MY).some(runsCrew); }
+  function b64ToBytes(s) {
+    s = s.replace(/-/g, "+").replace(/_/g, "/"); s += "===".slice((s.length + 3) % 4);
+    var raw = atob(s), a = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) a[i] = raw.charCodeAt(i);
+    return a;
+  }
+  function pushSub() {
+    return navigator.serviceWorker.ready.then(function (reg) {
+      return reg.pushManager.getSubscription().then(function (s) { return { reg: reg, sub: s }; });
+    });
+  }
+  function savePushSub(sub) {
+    var j = sub.toJSON();
+    return api({ action: "push_save", endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth });
+  }
+  function refreshPushButton() {
+    var b = $("#acct-push"); if (!b) return;
+    var show = AUTH_ON && authValid() && !!PUSH_KEY && (pushSupported() || IS_IOS);
+    b.hidden = !show; if (!show) return;
+    b.textContent = pushOn ? "🔔 Notifications on" : "🔕 Notifications off";
+    b.title = pushOn ? "Tap to stop notifications on this device" : "Get a notification on this device when something needs you";
+    b.classList.toggle("btn-accent", !pushOn && runsAnything());
+  }
+  // After sign-in: is this device already set up? (re-saving keeps it linked to whoever is signed in now)
+  function checkPush() {
+    pushOn = false; pushChecked = false;
+    if (!pushSupported() || !authValid() || Notification.permission !== "granted") { pushChecked = true; refreshPushButton(); maybeAskPush(); return; }
+    pushSub().then(function (x) { return x.sub ? savePushSub(x.sub).then(function (r) { return !!(r && r.ok); }) : false; })
+      .then(function (on) { pushOn = on; }).catch(function () {})
+      .then(function () { pushChecked = true; refreshPushButton(); maybeAskPush(); });
+  }
+  function enablePush() {
+    hidePushAsk();
+    if (IS_IOS && !IS_STANDALONE) { toast("Add Street Archive to your Home Screen first", "On iPhone, notifications only work in the installed app: tap Share → Add to Home Screen, open it from there, then turn them on.", 9000); return; }
+    if (!pushSupported()) { toast("This browser can't show notifications", "Try Chrome, or the installed app."); return; }
+    if (Notification.permission === "denied") { toast("Notifications are blocked", "Allow notifications for Street Archive in your phone's settings, then try again.", 9000); return; }
+    Notification.requestPermission().then(function (p) {
+      if (p !== "granted") throw new Error("Notifications weren't allowed.");
+      return pushSub();
+    }).then(function (x) {
+      return x.sub || x.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(PUSH_KEY) });
+    }).then(savePushSub).then(function (r) {
+      if (!r || !r.ok) throw new Error((r && r.error) || "Couldn't save");
+      pushOn = true; refreshPushButton();
+      toast("Notifications on 🔔", ROLE.admin ? "You'll get a ping here for join requests and posts waiting for approval." : "You'll get a ping here when someone asks to join your crew.", 6000);
+    }).catch(function (e) { toast("Couldn't turn on notifications", (e && e.message) || ""); });
+  }
+  function forgetPushDevice() {   // stop notifications for this account on this device
+    if (!pushOn || !pushSupported()) return Promise.resolve();
+    return pushSub().then(function (x) {
+      if (!x.sub) return;
+      return api({ action: "push_remove", endpoint: x.sub.endpoint }).catch(function () {}).then(function () { return x.sub.unsubscribe(); });
+    }).catch(function () {}).then(function () { pushOn = false; refreshPushButton(); });
+  }
+  function maybeAskPush() {
+    if (!pushChecked || pushOn || !authValid() || !runsAnything() || !pushSupported() || (IS_IOS && !IS_STANDALONE)) return;
+    if (Notification.permission === "denied" || Date.now() < store.get("pushAskSnooze", 0) || $("#push-ask")) return;
+    var el = document.createElement("div"); el.className = "toast"; el.id = "push-ask";
+    el.innerHTML = "<b>Get notified on this device?</b><span class='muted'>" +
+      (ROLE.admin ? "When someone asks to join a crew or a post needs your approval." : "When someone asks to join your crew.") +
+      "</span><div class='toast-btns'><button class='btn sm btn-accent' data-push-on>Turn on</button><button class='btn sm' data-push-later>Not now</button></div>";
+    $("#toasts").appendChild(el);
+  }
+  function hidePushAsk() { var el = $("#push-ask"); if (el) el.remove(); }
+  document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-push-on]")) enablePush();
+    else if (e.target.closest("[data-push-later]")) { store.set("pushAskSnooze", Date.now() + 7 * 86400e3); hidePushAsk(); }
+    else if (e.target.closest("#acct-push")) { if (pushOn) forgetPushDevice().then(function () { toast("Notifications off on this device"); }); else enablePush(); }
+  });
+
   document.addEventListener("change", function (e) {
     if (e.target.id !== "avatar-file") return;
     var file = e.target.files && e.target.files[0]; if (!file || !avatarChoice) return;
@@ -2096,6 +2202,7 @@
   }
   function showKind(k) {
     kind = k;
+    if (k === "crew") renderLogoPreview();
     $$(".seg-btn").forEach(function (x) { x.classList.toggle("active", x.dataset.kind === k); });
     $(".kind-meet").hidden = k !== "meet"; $(".kind-crew").hidden = k !== "crew"; $(".kind-place").hidden = k !== "place";
   }
@@ -2128,6 +2235,7 @@
     } else if (m.kind === "crew") {
       set("name", m.name); set("area", m.area); set("color", m.color || "#ff3b3b"); set("radius", m.radius || 3);
       set("logo", (m.logo || "").replace(/^club_logos\//, "")); set("pagelink", m.link); set("tags", m.tags);
+      logoChoice = null; renderLogoPreview(); $("#logo-note").textContent = "Crew logo — square images look best, we'll crop it for you.";
     } else {
       set("pname", m.name); set("pcategory", m.category || "mechanic"); renderTagChips();
       $$("#ptag-chips input").forEach(function (i) { i.checked = (m.tags || []).indexOf(i.value) > -1; });
@@ -2356,6 +2464,21 @@
     if (kind === "place" && !f.pname) { toast("Shop / place name is required"); return; }
     if (kind === "place" && !API) { toast("Shops need the database", "Set supabaseUrl / supabaseKey in js/config.js."); return; }
 
+    // A new crew logo was picked: upload it first, then save the form with its link.
+    if ((editing ? editing.kind : kind) === "crew" && logoChoice && logoChoice.blob && API) {
+      if (sending) return;
+      if (AUTH_ON && !authValid()) { updateGate(); toast("Please sign in again", "Your session expired."); return; }
+      sending = true;
+      var lb = $("#submit-go"), lbt = lb.textContent; lb.disabled = true; lb.textContent = "Uploading logo…";
+      api({ action: "upload_logo", blob: logoChoice.blob }).then(function (r) {
+        if (!r || !r.ok) throw new Error((r && r.error) || "Couldn't upload the logo");
+        form.elements.logo.value = r.url; logoChoice = null;
+        sending = false; lb.disabled = false; lb.textContent = lbt;
+        if (form.requestSubmit) form.requestSubmit(); else form.dispatchEvent(new Event("submit", { cancelable: true }));
+      }).catch(function (err) { sending = false; lb.disabled = false; lb.textContent = lbt; toast("Couldn't upload the logo", (err && err.message) || ""); });
+      return;
+    }
+
     var logo = (f.logo || "").trim();
     var logoPath = /^https?:\/\//i.test(logo) ? logo : (logo ? "club_logos/" + logo : "");
 
@@ -2458,6 +2581,15 @@
 
   // Deep links: #meet=id or #crew=id
   function fromHash() {
+    if (location.hash === "#admin" || /^#manage=/.test(location.hash)) {   // from a phone notification
+      var mid = location.hash === "#admin" ? "" : decodeURIComponent(location.hash.slice(8));
+      var tries = 0;
+      (function go() {
+        if (mid ? (runsCrew(mid) || ROLE.admin) : ROLE.admin) { if (mid) openCrewPanel(mid); else openAdmin(); return; }
+        if (++tries < 20) setTimeout(go, 500);
+      })();
+      return;
+    }
     var m = location.hash.match(/^#(meet|crew|place)=(.+)$/);
     if (!m) return;
     var id = decodeURIComponent(m[2]);

@@ -564,3 +564,12 @@ a.mname { color: var(--text); text-decoration: none; }
 .steps li { line-height: 1.4; }
 .ios-share { display: inline-block; vertical-align: -3px; color: #3ea6ff; }
 @media (min-width: 721px) { .install-banner { left: auto; right: 16px; width: 380px; top: 78px; } }
+
+/* crew logo upload (submit / edit crew) */
+.logo-edit { display: flex; align-items: center; gap: 14px; margin: 4px 0 12px; }
+.logo-edit > div { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.logo-edit .muted { width: 100%; }
+.modal .logo-edit label.btn { display: inline-flex; margin: 0; color: var(--text); letter-spacing: .03em; font-size: 13px; height: 34px; }
+.logo-edit .btn.sm { height: 34px; }
+/* buttons inside a toast (e.g. "Get notified?") */
+.toast-btns { display: flex; gap: 8px; margin-top: 10px; }

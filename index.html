@@ -31,7 +31,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Covered+By+Your+Grace&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=20261128w">
+  <link rel="stylesheet" href="styles.css?v=20261129x">
 </head>
 <body>
 
@@ -69,7 +69,7 @@
           <div id="acct-crews" hidden><h5>My crews</h5><ul id="acct-crew-list" class="acct-posts"></ul></div>
           <h5>My posts</h5>
           <ul id="acct-posts" class="acct-posts"></ul>
-          <div class="acct-actions"><button id="acct-profile" class="btn sm">My profile</button><button class="btn sm" data-feedback>💬 Feedback</button><button class="btn sm" data-install hidden>📲 Install app</button><button id="acct-admin" class="btn sm btn-accent" hidden>Admin panel</button><button id="acct-signout" class="btn sm">Sign out</button></div>
+          <div class="acct-actions"><button id="acct-profile" class="btn sm">My profile</button><button class="btn sm" data-feedback>💬 Feedback</button><button class="btn sm" data-install hidden>📲 Install app</button><button id="acct-push" class="btn sm" hidden>🔕 Notifications off</button><button id="acct-admin" class="btn sm btn-accent" hidden>Admin panel</button><button id="acct-signout" class="btn sm">Sign out</button></div>
         </div>
       </div>
     </div>
@@ -203,7 +203,15 @@
           </div>
           <div class="row">
             <label>Turf radius (km)<input name="radius" type="number" min="0.5" max="30" step="0.5" value="3"></label>
-            <label>Logo (image link)<input name="logo" placeholder="https://… or mycrew.jpg"></label>
+          </div>
+          <div class="logo-edit">
+            <span class="mav lg" id="logo-preview"></span>
+            <div>
+              <label class="btn sm avatar-pick">📷 Upload logo<input id="logo-file" type="file" accept="image/*" hidden></label>
+              <button type="button" class="btn sm" id="logo-clear" hidden>Remove</button>
+              <div id="logo-note" class="muted small">Crew logo — square images look best, we'll crop it for you.</div>
+            </div>
+            <input type="hidden" name="logo">
           </div>
           <label>FB / IG page<input name="pagelink" type="url" placeholder="https://facebook.com/…"></label>
           <label>Style tags (optional)<input name="tags" placeholder="JDM, Stance, Euro"></label>
@@ -397,10 +405,10 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://unpkg.com/@supabase/supabase-js@2.119.2/dist/umd/supabase.js"></script>
-  <script src="js/config.js?v=20261128w"></script>
-  <script src="js/backend.js?v=20261128w"></script>
-  <script src="data/crews.js?v=20261128w"></script>
-  <script src="data/events.js?v=20261128w"></script>
-  <script src="script.js?v=20261128w"></script>
+  <script src="js/config.js?v=20261129x"></script>
+  <script src="js/backend.js?v=20261129x"></script>
+  <script src="data/crews.js?v=20261129x"></script>
+  <script src="data/events.js?v=20261129x"></script>
+  <script src="script.js?v=20261129x"></script>
 </body>
 </html>
