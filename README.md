@@ -18,7 +18,7 @@ Browsing is open to everyone; posting needs a Google account.
 | `data/crews.js`, `data/events.js` | Optional hard-coded entries (empty — everything lives in Supabase now). |
 | `privacy.html` | Privacy policy (linked from the footer and the Google sign-in screen). |
 | `club_logos/` | Crew logos (type just the file name in the crew form). |
-| `supabase/` | Database setup: `schema.sql` + `update-1…4` (already applied), the `ics` calendar function, and `keep-alive.yml`. |
+| `supabase/` | Database setup: `schema.sql` + `update-1…6` (all applied), the `ics` calendar function, and `keep-alive.yml`. |
 | `.github/workflows/keep-alive.yml` | (on GitHub only) pings Supabase daily so the free project never pauses; emails you if it's down. |
 | `beta/` | Test copy of the site — try changes at `…/street-archive/beta/` before replacing the main files. |
 | `google-apps-script/` | The old Google Sheet backend (retired; kept for reference). |
@@ -63,6 +63,17 @@ Tabs **Pending / Reported / Live / Archived**, filtered by **Meets / Crews / Sho
 - Fix anything by hand in Supabase → Table Editor → `crew_members` (role owner/admin/member, status active/pending).
 - Lists refresh when you come back to the tab and every 90 s; a red ring on the account button = something waiting.
 
+## Profiles, garage, "Pulling up", badges
+
+- Tap any name (meet "Posted by", who's going, crew members) for a profile; account menu → **My profile** to edit
+  name / bio / link (`@handle` = Instagram). Emails are never public; trusted/banned/strikes are private (update-6).
+- **My Garage:** up to 10 cars, one photo each (shrunk on the phone, stored in the Supabase `cars` bucket).
+- **Pulling up:** one tap on a meet (optionally which car); counts show on popups and the meet list.
+- **Badges** are automatic: Founding member (joined before 1 Mar 2027), Crew owner/admin, Verified crew,
+  Meet host/Organizer, First meet/Regular/Veteran, Garage/Collector, Street Archive admin.
+- **Verify a crew:** Supabase → Table Editor → `crews` → tick `verified` (blue ✔ on the map and profiles).
+- Crew pages: tap "👥 N members ›" in a crew popup — members, crew garage, upcoming meets.
+
 ## Free-plan limits (Supabase)
 
 No card on file → you can't be billed. Free: 500 MB database, 5 GB egress/month, 50,000 monthly
@@ -84,7 +95,7 @@ that). Check **Supabase → Usage** occasionally; a scheduled usage check also r
 4. **Google Play** — wrap the PWA (Trusted Web Activity). US$25 once; new personal accounts need a
    closed test with 12+ testers for 14 days. Needs `/.well-known/assetlinks.json` at the domain root
    (a `username.github.io` repo or a custom domain).
-5. **Profiles / My Garage, RSVPs, badges**, then the money-making ideas.
+5. ~~Profiles / My Garage, RSVPs, badges, crew pages~~ — then the money-making ideas.
 6. App Store only if it grows enough to justify US$99/year (Apple often rejects website-in-a-frame apps).
 
 ## Running it locally
