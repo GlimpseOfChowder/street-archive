@@ -240,10 +240,32 @@
     if (s && !/^https?:/i.test(s) && /^[\w.-]+\.[a-z]{2,}\//i.test(s)) s = "https://" + s;
     return url(s);
   }
+  function avatarPath(u) { var m = /\/object\/public\/avatars\/(.+)$/.exec(u || ""); return m ? m[1] : ""; }
   function saveProfile(d) {
     var row = { display_name: clean(d.name, 40), bio: multiline(d.bio, 300), link: socialLink(d.link) };
     if (!row.display_name) return Promise.resolve({ ok: false, error: "Your name can't be empty." });
-    return sb.from("profiles").update(row).eq("id", uid()).select("id").then(expectOne);
+    if (d.avatar !== undefined) row.avatar_url = d.avatar || "";
+    return sb.from("profiles").update(row).eq("id", uid()).select("id").then(function (r) {
+      var res = expectOne(r);
+      // tidy up: remove the previous uploaded photo when it was replaced
+      if (res.ok && d.avatar !== undefined && d.old_avatar && d.old_avatar !== row.avatar_url && avatarPath(d.old_avatar))
+        sb.storage.from("avatars").remove([avatarPath(d.old_avatar)]);
+      return res;
+    });
+  }
+  function uploadAvatar(d) {
+    var path = uid() + "/" + Date.now().toString(36) + ".jpg";
+    return sb.storage.from("avatars").upload(path, d.blob, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false }).then(function (r) {
+      if (r.error) throw r.error;
+      return { ok: true, url: sb.storage.from("avatars").getPublicUrl(path).data.publicUrl };
+    });
+  }
+  // Your name + photo as saved in your profile (may differ from Google's).
+  function myBasics() {
+    return sb.from("profiles").select("display_name,avatar_url").eq("id", uid()).maybeSingle().then(function (r) {
+      if (r.error) throw r.error;
+      return { ok: true, name: r.data ? r.data.display_name : "", avatar: r.data ? r.data.avatar_url : "" };
+    });
   }
   function uploadCarPhoto(d) {
     var path = uid() + "/" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + ".jpg";
@@ -514,6 +536,8 @@
       if (d.action === "my_crews") return myCrews();
       if (d.action === "profile") return profile(d);
       if (d.action === "save_profile") return saveProfile(d);
+      if (d.action === "upload_avatar") return uploadAvatar(d);
+      if (d.action === "my_basics") return myBasics();
       if (d.action === "upload_car_photo") return uploadCarPhoto(d);
       if (d.action === "save_car") return saveCar(d);
       if (d.action === "delete_car") return deleteCar(d);
@@ -552,7 +576,8 @@
   function user() {
     if (!session || !session.user) return null;
     var u = session.user, md = u.user_metadata || {};
-    return { id: u.id, email: u.email || md.email || "", name: md.full_name || md.name || u.email || "", picture: md.avatar_url || md.picture || "" };
+    var g = md.avatar_url || md.picture || "";
+    return { id: u.id, email: u.email || md.email || "", name: md.full_name || md.name || u.email || "", picture: g, googlePicture: g };
   }
 
   window.SA_BACKEND = {
