@@ -540,6 +540,27 @@
   }
   setInterval(checkReminders, 30000);
 
+  /* ---------------- iPhone: keep the page from zooming (only the map should zoom) ---------------- */
+  // Safari ignores "no zoom" for accessibility, so a pinch / double-tap that lands outside the
+  // map can zoom the whole page and push the buttons off-screen. Block the page-level pinch
+  // (the map's own pinch zoom still works) and snap back if the page ends up zoomed anyway.
+  (function () {
+    document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
+    var vv = window.visualViewport, meta = document.querySelector("meta[name=viewport]"), t = null;
+    if (!vv || !meta) return;
+    function resetZoom() {
+      var a = document.activeElement;
+      if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;      // let typing finish first
+      if (vv.scale > 1.01) {
+        var c = meta.getAttribute("content");
+        meta.setAttribute("content", c.replace(/,?\s*maximum-scale=[\d.]+/, "") + ", maximum-scale=1.0001");
+        setTimeout(function () { meta.setAttribute("content", c); }, 60);
+      }
+    }
+    vv.addEventListener("resize", function () { clearTimeout(t); t = setTimeout(resetZoom, 600); });
+    document.addEventListener("focusout", function () { clearTimeout(t); t = setTimeout(resetZoom, 400); });
+  })();
+
   /* ---------------- side panel (desktop) / bottom sheet (mobile) ---------------- */
   var panel = $("#panel");
   var mq = window.matchMedia("(max-width: 720px)");
