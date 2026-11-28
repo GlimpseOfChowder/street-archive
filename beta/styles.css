@@ -547,3 +547,6 @@ a.mname { color: var(--text); text-decoration: none; }
 .avatar-edit > div { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .avatar-edit .muted { width: 100%; }
 .avatar-pick { cursor: pointer; }
+/* "Change photo" is a <label> styled as a button — undo the form-label styling so it lines up */
+.prof-form .avatar-edit label.btn { display: inline-flex; margin: 0; color: var(--text); letter-spacing: .03em; font-size: 13px; }
+.avatar-edit .btn.sm { height: 34px; }
